@@ -1,241 +1,362 @@
-"""Batch processor for parallel file processing"""
+"""Batch processing for large-scale conversions"""
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Callable, Optional
-from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Callable
+from dataclasses import dataclass, field
 from datetime import datetime
-import time
+from concurrent.futures import ThreadPoolExecutor
+import hashlib
+import json
 
 logger = logging.getLogger("orchestration.processing")
 
 
 @dataclass
-class BatchItem:
-    """Элемент батча"""
+class BatchJob:
+    """Batch job"""
     id: str
-    data: Any
-    priority: int = 0
-    metadata: Dict[str, Any] = None
-    
-    def __lt__(self, other):
-        return self.priority < other.priority
+    name: str
+    files: List[str]
+    options: Dict[str, Any]
+    status: str = "pending"  # pending, running, completed, failed
+    progress: int = 0
+    results: List[Dict] = field(default_factory=list)
+    errors: List[Dict] = field(default_factory=list)
+    created_at: str = ""
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 
 @dataclass
 class BatchResult:
-    """Результат обработки"""
-    item_id: str
+    """Batch result"""
+    job_id: str
+    file: str
     success: bool
-    result: Any = None
-    error: str = None
+    output: Optional[str] = None
+    error: Optional[str] = None
     duration: float = 0
 
 
 class BatchProcessor:
-    """Параллельный батч процессор"""
+    """Process files in batches"""
     
     def __init__(
         self,
-        max_concurrent: int = 4,
-        max_retries: int = 2,
-        retry_delay: float = 1.0,
+        max_workers: int = 4,
+        batch_size: int = 10,
     ):
-        self.max_concurrent = max_concurrent
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self.semaphore = asyncio.Semaphore(max_concurrent)
-        
-        self.results: List[BatchResult] = []
-        self.start_time: float = 0
-        self.end_time: float = 0
+        self.max_workers = max_workers
+        self.batch_size = batch_size
+        self.jobs: Dict[str, BatchJob] = {}
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
     
-    async def process(
+    def create_job(
         self,
-        items: List[BatchItem],
-        processor: Callable[[BatchItem], Any],
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> List[BatchResult]:
-        """Обработка батча"""
-        self.start_time = time.time()
-        self.results = []
+        name: str,
+        files: List[str],
+        options: Dict[str, Any] = None,
+    ) -> str:
+        """Create a batch job"""
+        import uuid
         
-        tasks = []
-        for item in items:
-            task = self._process_item(item, processor)
-            tasks.append(task)
+        job_id = f"job_{uuid.uuid4().hex[:8]}"
         
-        # Process with progress
-        completed = 0
-        total = len(items)
+        job = BatchJob(
+            id=job_id,
+            name=name,
+            files=files,
+            options=options or {},
+            created_at=datetime.now().isoformat(),
+        )
         
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            self.results.append(result)
-            completed += 1
-            
-            if progress_callback:
-                progress_callback(completed, total)
-            
-            # Log progress
-            if completed % 10 == 0:
-                logger.info(f"Progress: {completed}/{total} ({100*completed//total}%)")
+        self.jobs[job_id] = job
         
-        self.end_time = time.time()
-        return self.results
+        logger.info(f"Created batch job: {job_id} ({len(files)} files)")
+        
+        return job_id
     
-    async def _process_item(
+    async def run_job(
         self,
-        item: BatchItem,
-        processor: Callable[[BatchItem], Any],
-    ) -> BatchResult:
-        """Обработка одного элемента"""
-        async with self.semaphore:
-            start = time.time()
+        job_id: str,
+        processor: Callable,
+    ) -> BatchJob:
+        """Run a batch job"""
+        job = self.jobs.get(job_id)
+        
+        if not job:
+            raise ValueError(f"Job not found: {job_id}")
+        
+        job.status = "running"
+        job.started_at = datetime.now().isoformat()
+        
+        # Split into batches
+        batches = [
+            job.files[i:i + self.batch_size]
+            for i in range(0, len(job.files), self.batch_size)
+        ]
+        
+        logger.info(f"Running job {job_id} in {len(batches)} batches")
+        
+        for batch_idx, batch in enumerate(batches):
+            # Process batch
+            tasks = []
+            for file_path in batch:
+                task = asyncio.create_task(
+                    self._process_file(processor, file_path, job.options)
+                )
+                tasks.append((file_path, task))
             
-            for attempt in range(self.max_retries + 1):
+            # Wait for batch
+            for file_path, task in tasks:
                 try:
-                    # Run processor (could be sync or async)
-                    if asyncio.iscoroutinefunction(processor):
-                        result = await processor(item)
+                    result = await task
+                    job.results.append(result)
+                    
+                    if result.success:
+                        logger.debug(f"Processed: {file_path}")
                     else:
-                        result = processor(item)
-                    
-                    return BatchResult(
-                        item_id=item.id,
-                        success=True,
-                        result=result,
-                        duration=time.time() - start,
-                    )
-                    
+                        job.errors.append({
+                            "file": file_path,
+                            "error": result.error,
+                        })
+                        
                 except Exception as e:
-                    logger.warning(f"Attempt {attempt + 1} failed for {item.id}: {e}")
-                    
-                    if attempt < self.max_retries:
-                        await asyncio.sleep(self.retry_delay * (attempt + 1))
-                    else:
-                        return BatchResult(
-                            item_id=item.id,
-                            success=False,
-                            error=str(e),
-                            duration=time.time() - start,
-                        )
+                    job.errors.append({
+                        "file": file_path,
+                        "error": str(e),
+                    })
+            
+            # Update progress
+            job.progress = int((batch_idx + 1) / len(batches) * 100)
+        
+        job.status = "completed"
+        job.completed_at = datetime.now().isoformat()
+        
+        logger.info(f"Job {job_id} completed: {len(job.results)} results, {len(job.errors)} errors")
+        
+        return job
+    
+    async def _process_file(
+        self,
+        processor: Callable,
+        file_path: str,
+        options: Dict[str, Any],
+    ) -> BatchResult:
+        """Process a single file"""
+        import time
+        
+        start = time.time()
+        
+        try:
+            # Run processor
+            if asyncio.iscoroutinefunction(processor):
+                output = await processor(file_path, options)
+            else:
+                output = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: processor(file_path, options)
+                )
             
             return BatchResult(
-                item_id=item.id,
+                job_id="",
+                file=file_path,
+                success=True,
+                output=output,
+                duration=time.time() - start,
+            )
+            
+        except Exception as e:
+            return BatchResult(
+                job_id="",
+                file=file_path,
                 success=False,
-                error="Max retries exceeded",
+                error=str(e),
                 duration=time.time() - start,
             )
     
+    def get_job(self, job_id: str) -> Optional[BatchJob]:
+        """Get job status"""
+        return self.jobs.get(job_id)
+    
+    def list_jobs(self, status: str = None) -> List[BatchJob]:
+        """List jobs"""
+        if status:
+            return [j for j in self.jobs.values() if j.status == status]
+        return list(self.jobs.values())
+    
+    def cancel_job(self, job_id: str) -> bool:
+        """Cancel a job"""
+        job = self.jobs.get(job_id)
+        
+        if job and job.status == "running":
+            job.status = "cancelled"
+            return True
+        
+        return False
+    
     def get_stats(self) -> Dict[str, Any]:
-        """Получить статистику"""
-        total = len(self.results)
-        successful = sum(1 for r in self.results if r.success)
-        failed = total - successful
+        """Get processing statistics"""
+        total = len(self.jobs)
+        completed = sum(1 for j in self.jobs.values() if j.status == "completed")
+        failed = sum(1 for j in self.jobs.values() if j.status == "failed")
+        running = sum(1 for j in self.jobs.values() if j.status == "running")
         
         return {
-            "total_items": total,
-            "successful": successful,
+            "total_jobs": total,
+            "completed": completed,
             "failed": failed,
-            "success_rate": successful / total if total > 0 else 0,
-            "duration_seconds": self.end_time - self.start_time,
-            "avg_item_duration": sum(r.duration for r in self.results) / total if total > 0 else 0,
+            "running": running,
+            "max_workers": self.max_workers,
+            "batch_size": self.batch_size,
         }
 
 
-class PriorityBatchProcessor(BatchProcessor):
-    """Batched processor с приоритетами"""
+class ChunkProcessor:
+    """Process large files in chunks"""
     
-    async def process_priority(
-        self,
-        items: List[BatchItem],
-        processor: Callable[[BatchItem], Any],
-    ) -> List[BatchResult]:
-        """Обработка с учётом приоритетов"""
-        # Sort by priority (highest first)
-        sorted_items = sorted(items, reverse=True)
-        
-        return await self.process(sorted_items, processor)
-
-
-class ChunkedProcessor:
-    """Processor для больших файлов с чанками"""
-    
-    def __init__(self, chunk_size: int = 1000):
+    def __init__(self, chunk_size: int = 10000):
         self.chunk_size = chunk_size
     
-    def chunk_list(self, items: List[Any]) -> List[List[Any]]:
-        """Разделение на чанки"""
-        return [
-            items[i:i + self.chunk_size]
-            for i in range(0, len(items), self.chunk_size)
-        ]
-    
-    async def process_chunks(
+    def process_file(
         self,
-        items: List[Any],
-        processor: Callable[[List[Any]], Any],
-        chunk_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> List[Any]:
-        """Обработка чанками"""
-        chunks = self.chunk_list(items)
+        file_path: str,
+        processor: Callable,
+        output_path: str = None,
+    ) -> str:
+        """Process file in chunks"""
+        path = Path(file_path)
+        content = path.read_text()
+        
+        # Split into chunks
+        chunks = [
+            content[i:i + self.chunk_size]
+            for i in range(0, len(content), self.chunk_size)
+        ]
+        
         results = []
         
         for i, chunk in enumerate(chunks):
-            result = await processor(chunk)
-            results.extend(result if isinstance(result, list) else [result])
-            
-            if chunk_callback:
-                chunk_callback(i + 1, len(chunks))
+            result = processor(chunk, chunk_idx=i)
+            results.append(result)
         
-        return results
+        # Combine results
+        output = "\n".join(str(r) for r in results)
+        
+        if output_path:
+            Path(output_path).write_text(output)
+        
+        return output
+    
+    def process_stream(
+        self,
+        input_path: str,
+        processor: Callable,
+        output_path: str,
+    ):
+        """Process file as stream"""
+        path = Path(input_path)
+        output = Path(output_path)
+        
+        with path.open("r") as infile, output.open("w") as outfile:
+            chunk_idx = 0
+            
+            while True:
+                chunk = infile.read(self.chunk_size)
+                
+                if not chunk:
+                    break
+                
+                result = processor(chunk, chunk_idx=chunk_idx)
+                outfile.write(str(result))
+                
+                chunk_idx += 1
 
 
-class RateLimitedProcessor:
-    """Processor с rate limiting"""
+class ParallelProcessor:
+    """Parallel file processing"""
     
-    def __init__(self, calls_per_minute: int = 60):
-        self.calls_per_minute = calls_per_minute
-        self.min_interval = 60.0 / calls_per_minute
-        self.last_call = 0
+    def __init__(self, max_workers: int = 4):
+        self.max_workers = max_workers
     
-    async def call(self, func: Callable, *args, **kwargs):
-        """Вызов с rate limiting"""
+    async def process_files(
+        self,
+        files: List[str],
+        processor: Callable,
+        options: Dict[str, Any] = None,
+    ) -> List[BatchResult]:
+        """Process files in parallel"""
+        semaphore = asyncio.Semaphore(self.max_workers)
+        
+        async def process_with_limit(file_path: str):
+            async with semaphore:
+                return await self._process(processor, file_path, options or {})
+        
+        tasks = [process_with_limit(f) for f in files]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Convert exceptions to failed results
+        batch_results = []
+        for file_path, result in zip(files, results):
+            if isinstance(result, Exception):
+                batch_results.append(BatchResult(
+                    job_id="",
+                    file=file_path,
+                    success=False,
+                    error=str(result),
+                ))
+            else:
+                batch_results.append(result)
+        
+        return batch_results
+    
+    async def _process(
+        self,
+        processor: Callable,
+        file_path: str,
+        options: Dict[str, Any],
+    ) -> BatchResult:
+        """Process single file"""
         import time
         
-        # Wait if needed
-        elapsed = time.time() - self.last_call
-        if elapsed < self.min_interval:
-            await asyncio.sleep(self.min_interval - elapsed)
+        start = time.time()
         
-        self.last_call = time.time()
-        
-        if asyncio.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-        return func(*args, **kwargs)
+        try:
+            if asyncio.iscoroutinefunction(processor):
+                output = await processor(file_path, options)
+            else:
+                output = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: processor(file_path, options)
+                )
+            
+            return BatchResult(
+                job_id="",
+                file=file_path,
+                success=True,
+                output=output,
+                duration=time.time() - start,
+            )
+            
+        except Exception as e:
+            return BatchResult(
+                job_id="",
+                file=file_path,
+                success=False,
+                error=str(e),
+                duration=time.time() - start,
+            )
 
 
-# Demo
-async def demo():
-    """Демонстрация"""
-    processor = BatchProcessor(max_concurrent=4)
-    
-    items = [
-        BatchItem(id=f"item_{i}", data={"value": i}, priority=i % 3)
-        for i in range(20)
-    ]
-    
-    async def process(item: BatchItem):
-        await asyncio.sleep(0.1)  # Simulate work
-        return {"processed": item.data}
-    
-    results = await processor.process(items, process)
-    
-    stats = processor.get_stats()
-    print(f"Processed: {stats['successful']}/{stats['total_items']}")
-    print(f"Duration: {stats['duration_seconds']:.2f}s")
+# Global batch processor
+_batch_processor: Optional[BatchProcessor] = None
 
 
-if __name__ == "__main__":
-    asyncio.run(demo())
+def get_batch_processor() -> BatchProcessor:
+    """Get batch processor"""
+    global _batch_processor
+    if _batch_processor is None:
+        _batch_processor = BatchProcessor()
+    return _batch_processor
