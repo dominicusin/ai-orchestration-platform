@@ -1,235 +1,387 @@
-"""Scheduler for automated pipeline runs"""
+"""Recursive task scheduler with DAG-based load distribution"""
 
-import os
 import asyncio
 import logging
-import hashlib
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Callable
-from datetime import datetime, timedelta
-from dataclasses import dataclass
+from typing import Dict, Any, List, Set, Optional, Callable
+from dataclasses import dataclass, field
+from collections import defaultdict
 from enum import Enum
-import croniter
+import uuid
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("orchestration.scheduler")
 
 
-class ScheduleType(Enum):
-    """Schedule types"""
-    CRON = "cron"
-    INTERVAL = "interval"
-    DAILY = "daily"
-    WEEKLY = "weekly"
+class TaskState(str, Enum):
+    IDLE = "idle"
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
 
 
 @dataclass
-class Schedule:
-    """Schedule configuration"""
+class SubTask:
+    """Atomic subtask"""
+    id: str
     name: str
-    schedule_type: str
-    expression: str  # cron expression or interval seconds
-    enabled: bool = True
-    project_path: str = "./OpenPapyrus"
-    output_path: str = "./Surypus2"
-    provider: str = "ollama"
-    options: Dict[str, Any] = None
+    func: Callable
+    args: tuple = field(default_factory=tuple)
+    kwargs: dict = field(default_factory=dict)
+    priority: int = 0
+    timeout: float = 300
+    retries: int = 0
+    max_retries: int = 3
+    
+    def __hash__(self):
+        return hash(self.id)
 
 
-@dataclass
-class ScheduledRun:
-    """Scheduled run record"""
-    schedule_name: str
-    scheduled_time: str
-    started_time: Optional[str] = None
-    completed_time: Optional[str] = None
-    status: str = "pending"  # pending, running, completed, failed
-    result: Optional[Dict[str, Any]] = None
+@dataclass 
+class TaskNode:
+    """Task node in DAG"""
+    id: str
+    name: str
+    func: Callable
+    args: tuple = field(default_factory=tuple)
+    kwargs: dict = field(default_factory=dict)
+    dependencies: Set[str] = field(default_factory=set)
+    children: Set[str] = field(default_factory=set)
+    state: TaskState = TaskState.IDLE
+    result: Any = None
     error: Optional[str] = None
+    start_time: float = 0
+    end_time: float = 0
+    
+    @property
+    def duration(self) -> float:
+        if self.end_time > 0:
+            return self.end_time - self.start_time
+        return time.time() - self.start_time if self.start_time > 0 else 0
 
 
-class Scheduler:
-    """Pipeline scheduler"""
+class RecursiveTaskGraph:
+    """Recursive DAG for complex task decomposition"""
     
-    def __init__(self):
-        self.schedules: Dict[str, Schedule] = {}
-        self.runs: List[ScheduledRun] = []
-        self.running = False
-        self._task = None
+    def __init__(self, name: str = "recursive_dag"):
+        self.name = name
+        self.nodes: Dict[str, TaskNode] = {}
+        self.root_ids: Set[str] = set()
+        self.leaf_ids: Set[str] = set()
     
-    def add_schedule(self, schedule: Schedule):
-        """Add schedule"""
-        self.schedules[schedule.name] = schedule
-        logger.info(f"Added schedule: {schedule.name} ({schedule.expression})")
+    def add_node(self, node: TaskNode):
+        """Add node to DAG"""
+        self.nodes[node.id] = node
+        
+        if not node.dependencies:
+            self.root_ids.add(node.id)
+        
+        # Update leaf nodes
+        if not node.children:
+            self.leaf_ids.add(node.id)
+        elif node.id in self.leaf_ids:
+            self.leaf_ids.discard(node.id)
     
-    def remove_schedule(self, name: str):
-        """Remove schedule"""
-        if name in self.schedules:
-            del self.schedules[name]
-            logger.info(f"Removed schedule: {name}")
+    def add_edge(self, from_id: str, to_id: str):
+        """Add directed edge (from depends on to)"""
+        if from_id not in self.nodes or to_id not in self.nodes:
+            return
+        
+        self.nodes[from_id].dependencies.add(to_id)
+        self.nodes[to_id].children.add(from_id)
+        
+        # Update roots/leaves
+        if from_id in self.root_ids:
+            self.root_ids.discard(from_id)
+        
+        if not self.nodes[to_id].children:
+            self.leaf_ids.add(to_id)
+        if to_id in self.leaf_ids:
+            self.leaf_ids.discard(to_id)
     
-    def get_next_run(self, schedule: Schedule) -> Optional[datetime]:
-        """Get next run time"""
-        if schedule.schedule_type == "cron":
-            try:
-                cron = croniter.croniter(schedule.expression)
-                return cron.get_next(datetime)
-            except Exception:
-                return None
+    def get_ready_nodes(self) -> List[TaskNode]:
+        """Get nodes with all dependencies satisfied"""
+        ready = []
         
-        elif schedule.schedule_type == "interval":
-            try:
-                interval = int(schedule.expression)
-                return datetime.now() + timedelta(seconds=interval)
-            except Exception:
-                return None
+        for nid in self.root_ids:
+            node = self.nodes[nid]
+            if node.state == TaskState.IDLE:
+                ready.append(node)
         
-        elif schedule.schedule_type == "daily":
-            try:
-                hour, minute = map(int, schedule.expression.split(":"))
-                now = datetime.now()
-                next_run = now.replace(hour=hour, minute=minute, second=0)
-                if next_run <= now:
-                    next_run += timedelta(days=1)
-                return next_run
-            except Exception:
-                return None
-        
-        return None
-    
-    async def run_schedule(self, schedule: Schedule):
-        """Run scheduled pipeline"""
-        logger.info(f"Starting scheduled run: {schedule.name}")
-        
-        run = ScheduledRun(
-            schedule_name=schedule.name,
-            scheduled_time=datetime.now().isoformat(),
-            started_time=datetime.now().isoformat(),
-            status="running",
-        )
-        self.runs.append(run)
-        
-        try:
-            # Import and run pipeline
-            from orchestration.pipeline import run_pipeline
+        for nid, node in self.nodes.items():
+            if node.state != TaskState.IDLE:
+                continue
             
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: run_pipeline(
-                    schedule.project_path,
-                    schedule.output_path,
-                    log_format="json",
-                )
+            deps_done = all(
+                self.nodes[d].state == TaskState.DONE
+                for d in node.dependencies
             )
             
-            run.completed_time = datetime.now().isoformat()
-            run.status = "completed"
-            run.result = {"success": True}
+            if deps_done:
+                ready.append(node)
+        
+        return ready
+    
+    def get_execution_layers(self) -> List[List[TaskNode]]:
+        """Get parallel execution layers (topological)"""
+        in_degree = defaultdict(int)
+        for nid, node in self.nodes.items():
+            in_degree[nid] = len(node.dependencies)
+        
+        layers = []
+        processed = set()
+        
+        while len(processed) < len(self.nodes):
+            # Find all nodes with zero in-degree
+            current_layer = [
+                self.nodes[nid] for nid, deg in in_degree.items()
+                if deg == 0 and nid not in processed
+            ]
             
-            logger.info(f"Scheduled run completed: {schedule.name}")
+            if not current_layer:
+                break
             
-        except Exception as e:
-            run.completed_time = datetime.now().isoformat()
-            run.status = "failed"
-            run.error = str(e)
+            layers.append(current_layer)
             
-            logger.error(f"Scheduled run failed: {schedule.name} - {e}")
+            for node in current_layer:
+                processed.add(node.id)
+                for child_id in node.children:
+                    in_degree[child_id] -= 1
+        
+        return layers
+    
+    def split_recursive(
+        self,
+        task_id: str,
+        items: List[Any],
+        splitter: Callable[[List], List[List]]],
+        func: Callable,
+    ) -> List[TaskNode]:
+        """Recursively split task into subtasks"""
+        nodes = []
+        
+        if len(items) <= 10:
+            # Base case: small enough to process directly
+            node = TaskNode(
+                id=task_id,
+                name=task_id,
+                func=func,
+                args=(items,),
+            )
+            nodes.append(node)
+            return nodes
+        
+        # Recursive case: split into chunks
+        chunks = splitter(items)
+        
+        for i, chunk in enumerate(chunks):
+            child_nodes = self.split_recursive(
+                f"{task_id}_chunk_{i}",
+                chunk,
+                splitter,
+                func,
+            )
+            
+            for child in child_nodes:
+                nodes.append(child)
+                self.add_edge(child.id, task_id)
+        
+        return nodes
+
+
+class TaskQueue:
+    """Priority queue for tasks"""
+    
+    def __init__(self, max_size: int = 1000):
+        self.max_size = max_size
+        self.queue: List[TaskNode] = []
+        self.pending: Dict[str, TaskNode] = {}
+    
+    def enqueue(self, node: TaskNode):
+        """Add task to queue"""
+        node.state = TaskState.QUEUED
+        self.queue.append(node)
+        self.pending[node.id] = node
+        self._heapify()
+    
+    def dequeue(self) -> Optional[TaskNode]:
+        """Get highest priority task"""
+        if not self.queue:
+            return None
+        
+        self._heapify()
+        node = self.queue.pop(0)
+        node.state = TaskState.RUNNING
+        node.start_time = time.time()
+        return node
+    
+    def _heapify(self):
+        """Sort by priority"""
+        self.queue.sort(key=lambda n: -n.priority)
+    
+    def complete(self, node_id: str, result: Any = None):
+        """Mark task complete"""
+        if node_id in self.pending:
+            node = self.pending[node_id]
+            node.state = TaskState.DONE
+            node.result = result
+            node.end_time = time.time()
+    
+    def fail(self, node_id: str, error: str):
+        """Mark task failed"""
+        if node_id in self.pending:
+            node = self.pending[node_id]
+            node.state = TaskState.FAILED
+            node.error = error
+            node.end_time = time.time()
+    
+    def is_empty(self) -> bool:
+        return len(self.queue) == 0
+    
+    def size(self) -> int:
+        return len(self.queue)
+
+
+class WorkerPool:
+    """Pool of workers for task execution"""
+    
+    def __init__(self, size: int = 4):
+        self.size = size
+        self.workers: Dict[int, asyncio.Task] = {}
+        self.queue = TaskQueue()
+        self.results: Dict[str, Any] = {}
+        self.running = False
     
     async def start(self):
-        """Start scheduler"""
+        """Start workers"""
         self.running = True
-        logger.info("Scheduler started")
+        
+        for i in range(self.size):
+            worker = asyncio.create_task(self._worker(i))
+            self.workers[i] = worker
+    
+    async def stop(self):
+        """Stop workers"""
+        self.running = False
+        
+        for worker in self.workers.values():
+            worker.cancel()
+        
+        await asyncio.gather(*self.workers.values(), return_exceptions=True)
+    
+    async def submit(self, node: TaskNode):
+        """Submit task"""
+        self.queue.enqueue(node)
+    
+    async def _worker(self, worker_id: int):
+        """Worker coroutine"""
+        logger.info(f"Worker {worker_id} started")
         
         while self.running:
-            now = datetime.now()
+            node = self.queue.dequeue()
             
-            for name, schedule in self.schedules.items():
-                if not schedule.enabled:
-                    continue
-                
-                next_run = self.get_next_run(schedule)
-                
-                if next_run and next_run <= now:
-                    # Time to run
-                    asyncio.create_task(self.run_schedule(schedule))
+            if node is None:
+                await asyncio.sleep(0.1)
+                continue
             
-            await asyncio.sleep(60)  # Check every minute
+            try:
+                logger.info(f"Worker {worker_id} executing {node.id}")
+                
+                if asyncio.iscoroutinefunction(node.func):
+                    result = await node.func(*node.args, **node.kwargs)
+                else:
+                    result = node.func(*node.args, **node.kwargs)
+                
+                self.queue.complete(node.id, result)
+                self.results[node.id] = result
+                
+            except Exception as e:
+                logger.error(f"Worker {worker_id} failed {node.id}: {e}")
+                self.queue.fail(node.id, str(e))
+        
+        logger.info(f"Worker {worker_id} stopped")
+
+
+class RecursiveScheduler:
+    """Recursive task scheduler with DAG"""
     
-    def stop(self):
-        """Stop scheduler"""
-        self.running = False
-        logger.info("Scheduler stopped")
+    def __init__(self, num_workers: int = 4):
+        self.graph = RecursiveTaskGraph()
+        self.pool = WorkerPool(num_workers)
     
-    def get_status(self) -> Dict[str, Any]:
-        """Get scheduler status"""
-        return {
-            "running": self.running,
-            "schedules": [
-                {
-                    "name": s.name,
-                    "enabled": s.enabled,
-                    "expression": s.expression,
-                    "next_run": self.get_next_run(s).isoformat() if self.get_next_run(s) else None,
-                }
-                for s in self.schedules.values()
-            ],
-            "recent_runs": [
-                {
-                    "schedule_name": r.schedule_name,
-                    "status": r.status,
-                    "started_time": r.started_time,
-                    "completed_time": r.completed_time,
-                }
-                for r in self.runs[-10:]
-            ],
-        }
-
-
-# Default schedules
-DEFAULT_SCHEDULES = [
-    Schedule(
-        name="nightly",
-        schedule_type="daily",
-        expression="02:00",
-        project_path="./OpenPapyrus",
-        output_path="./Surypus2",
-        provider="ollama",
-    ),
-    Schedule(
-        name="hourly",
-        schedule_type="interval",
-        expression="3600",
-        enabled=False,
-    ),
-]
-
-
-# CLI integration
-def setup_default_schedules(scheduler: Scheduler):
-    """Setup default schedules"""
-    for schedule in DEFAULT_SCHEDULES:
-        scheduler.add_schedule(schedule)
-
-
-# Cron helper
-def parse_cron(expression: str) -> Dict[str, Any]:
-    """Parse cron expression"""
-    parts = expression.split()
-    if len(parts) != 5:
-        return {"error": "Invalid cron expression"}
+    async def schedule(self, func: Callable, items: List[Any], **kwargs) -> Dict:
+        """Schedule recursive task execution"""
+        # Create root task
+        root = TaskNode(
+            id="root",
+            name="root",
+            func=func,
+            args=(items,),
+            **kwargs,
+        )
+        
+        self.graph.add_node(root)
+        
+        # Get execution layers
+        layers = self.graph.get_execution_layers()
+        
+        # Start worker pool
+        await self.pool.start()
+        
+        # Execute layer by layer
+        for layer in layers:
+            # Submit all tasks in layer
+            for node in layer:
+                await self.pool.submit(node)
+            
+            # Wait for layer to complete
+            while any(n.state != TaskState.DONE for n in layer):
+                await asyncio.sleep(0.1)
+        
+        # Stop pool
+        await self.pool.stop()
+        
+        return self.pool.results
     
-    return {
-        "minute": parts[0],
-        "hour": parts[1],
-        "day": parts[2],
-        "month": parts[3],
-        "weekday": parts[4],
-    }
+    def create_pipeline(
+        self,
+        stages: List[Callable],
+        items: List[Any],
+    ) -> RecursiveTaskGraph:
+        """Create pipeline DAG"""
+        graph = RecursiveTaskGraph()
+        
+        prev_id = None
+        
+        for i, stage_func in enumerate(stages):
+            node_id = f"stage_{i}"
+            
+            node = TaskNode(
+                id=node_id,
+                name=node_id,
+                func=stage_func,
+                args=(items,),
+            )
+            
+            graph.add_node(node)
+            
+            if prev_id:
+                graph.add_edge(node_id, prev_id)
+            
+            prev_id = node_id
+        
+        self.graph = graph
+        return graph
 
 
-def format_next_runs(expression: str, count: int = 5) -> List[str]:
-    """Format next N run times"""
-    try:
-        cron = croniter.croniter(expression)
-        return [cron.get_next(datetime).strftime("%Y-%m-%d %H:%M") for _ in range(count)]
-    except Exception:
-        return []
+# Global scheduler
+_scheduler: Optional[RecursiveScheduler] = None
+
+
+def get_scheduler(num_workers: int = 4) -> RecursiveScheduler:
+    """Get scheduler instance"""
+    global _scheduler
+    if _scheduler is None:
+        _scheduler = RecursiveScheduler(num_workers)
+    return _scheduler
