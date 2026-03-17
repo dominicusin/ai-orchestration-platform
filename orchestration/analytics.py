@@ -1,297 +1,170 @@
-"""Analytics and reporting"""
+"""Analytics for distributed task execution"""
 
-import json
 import time
 import logging
-from pathlib import Path
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
-import statistics
+from typing import Dict, Any, List
+from dataclasses import dataclass, field
+from collections import defaultdict
+from datetime import datetime
 
 logger = logging.getLogger("orchestration.analytics")
 
 
 @dataclass
-class PhaseMetrics:
-    """Phase metrics"""
-    name: str
-    duration: float
-    files: int
-    errors: int
-    retries: int
+class TaskMetrics:
+    """Metrics for a task"""
+    task_id: str
+    start_time: float
+    end_time: float = 0
+    worker_id: int = 0
+    status: str = "pending"
+    error: str = ""
+    
+    @property
+    def duration(self) -> float:
+        if self.end_time > 0:
+            return self.end_time - self.start_time
+        return time.time() - self.start_time
 
 
 @dataclass
-class ProviderMetrics:
-    """Provider metrics"""
-    name: str
-    calls: int
-    tokens: int
-    errors: int
-    avg_latency: float
-    total_cost: float
+class WorkerMetrics:
+    """Metrics for a worker"""
+    worker_id: int
+    tasks_completed: int = 0
+    tasks_failed: int = 0
+    total_duration: float = 0
+    avg_duration: float = 0
+    
+    @property
+    def success_rate(self) -> float:
+        total = self.tasks_completed + self.tasks_failed
+        return self.tasks_completed / total if total > 0 else 0
 
 
-class AnalyticsEngine:
-    """Analytics and reporting engine"""
-    
-    def __init__(self, output_dir: str = "./Surypus2"):
-        self.output_dir = Path(output_dir)
-        self.metrics_file = self.output_dir / "metrics.json"
-        self.history_file = self.output_dir / "analytics_history.json"
-    
-    def get_current_metrics(self) -> Dict[str, Any]:
-        """Get current pipeline metrics"""
-        if self.metrics_file.exists():
-            return json.loads(self.metrics_file.read_text())
-        return {}
-    
-    def get_historical_metrics(self) -> List[Dict[str, Any]]:
-        """Get historical metrics"""
-        if self.history_file.exists():
-            return json.loads(self.history_file.read_text())
-        return []
-    
-    def save_run(self):
-        """Save current run to history"""
-        current = self.get_current_metrics()
-        if not current:
-            return
-        
-        history = self.get_historical_metrics()
-        current["timestamp"] = datetime.now().isoformat()
-        history.append(current)
-        
-        # Keep last 100 runs
-        history = history[-100:]
-        
-        self.history_file.write_text(json.dumps(history, indent=2))
-    
-    def generate_report(self) -> Dict[str, Any]:
-        """Generate analytics report"""
-        history = self.get_historical_metrics()
-        
-        if not history:
-            return {"error": "No historical data"}
-        
-        report = {
-            "generated_at": datetime.now().isoformat(),
-            "total_runs": len(history),
-            "summary": self._calculate_summary(history),
-            "trends": self._calculate_trends(history),
-            "providers": self._analyze_providers(history),
-            "phases": self._analyze_phases(history),
-            "recommendations": self._generate_recommendations(history),
-        }
-        
-        return report
-    
-    def _calculate_summary(self, history: List[Dict]) -> Dict[str, Any]:
-        """Calculate summary statistics"""
-        runtimes = [r.get("runtime_seconds", 0) for r in history]
-        
-        return {
-            "avg_runtime": statistics.mean(runtimes) if runtimes else 0,
-            "min_runtime": min(runtimes) if runtimes else 0,
-            "max_runtime": max(runtimes) if runtimes else 0,
-            "total_runs": len(history),
-            "successful_runs": sum(1 for r in history if r.get("errors", 0) == 0),
-        }
-    
-    def _calculate_trends(self, history: List[Dict]) -> Dict[str, Any]:
-        """Calculate trends over time"""
-        if len(history) < 2:
-            return {"trend": "insufficient_data"}
-        
-        # Runtime trend
-        runtimes = [r.get("runtime_seconds", 0) for r in history]
-        
-        # Simple trend detection
-        recent = statistics.mean(runtimes[-5:]) if len(runtimes) >= 5 else runtimes[-1]
-        older = statistics.mean(runtimes[:5]) if len(runtimes) >= 5 else runtimes[0]
-        
-        if recent < older * 0.9:
-            trend = "improving"
-        elif recent > older * 1.1:
-            trend = "degrading"
-        else:
-            trend = "stable"
-        
-        return {
-            "runtime_trend": trend,
-            "recent_avg": recent,
-            "older_avg": older,
-        }
-    
-    def _analyze_providers(self, history: List[Dict]) -> Dict[str, Any]:
-        """Analyze provider performance"""
-        provider_stats = {}
-        
-        for run in history:
-            ai = run.get("ai", {}).get("by_provider", {})
-            for provider, data in ai.items():
-                if provider not in provider_stats:
-                    provider_stats[provider] = {"calls": 0, "tokens": 0, "errors": 0}
-                
-                provider_stats[provider]["calls"] += data.get("calls", 0)
-                provider_stats[provider]["tokens"] += data.get("tokens", 0)
-                provider_stats[provider]["errors"] += data.get("errors", 0)
-        
-        return provider_stats
-    
-    def _analyze_phases(self, history: List[Dict]) -> Dict[str, Any]:
-        """Analyze phase performance"""
-        phase_stats = {}
-        
-        for run in history:
-            phases = run.get("phases", {})
-            for phase, duration in phases.items():
-                if phase not in phase_stats:
-                    phase_stats[phase] = []
-                phase_stats[phase].append(duration)
-        
-        return {
-            phase: {
-                "avg_duration": statistics.mean(durations),
-                "min_duration": min(durations),
-                "max_duration": max(durations),
-                "runs": len(durations),
-            }
-            for phase, durations in phase_stats.items()
-        }
-    
-    def _generate_recommendations(self, history: List[Dict]) -> List[str]:
-        """Generate recommendations"""
-        recommendations = []
-        
-        if not history:
-            return ["Run pipeline to generate recommendations"]
-        
-        # Check for errors
-        total_errors = sum(r.get("errors", 0) for r in history)
-        if total_errors > 10:
-            recommendations.append("High error rate detected - consider adding more validation")
-        
-        # Check runtime
-        recent_runtimes = [r.get("runtime_seconds", 0) for r in history[-5:]]
-        avg_runtime = statistics.mean(recent_runtimes) if recent_runtimes else 0
-        
-        if avg_runtime > 3600:  # > 1 hour
-            recommendations.append("Consider enabling caching or reducing batch size")
-        
-        # Check cache
-        cache_rates = [r.get("cache", {}).get("hit_rate", 0) for r in history]
-        avg_cache = statistics.mean(cache_rates) if cache_rates else 0
-        
-        if avg_cache < 0.3:
-            recommendations.append("Low cache hit rate - consider adjusting cache policy")
-        
-        # Check providers
-        ai_data = history[-1].get("ai", {}) if history else {}
-        if not ai_data:
-            recommendations.append("No AI usage detected - enable AI for better conversions")
-        
-        return recommendations
-    
-    def export_csv(self, output_path: str = None) -> str:
-        """Export analytics to CSV"""
-        history = self.get_historical_metrics()
-        
-        if not history:
-            return "No data to export"
-        
-        output_path = output_path or str(self.output_dir / "analytics.csv")
-        
-        lines = ["timestamp,runtime_seconds,total_files,ai_calls,ai_tokens,errors"]
-        
-        for run in history:
-            lines.append(",".join([
-                run.get("timestamp", ""),
-                str(run.get("runtime_seconds", 0)),
-                str(sum([
-                    len(list(self.output_dir.glob("src/*.hs"))),
-                    len(list(self.output_dir.glob("qml/*.qml"))),
-                    len(list(self.output_dir.glob("reports/**/*.jrxml"))),
-                ])),
-                str(run.get("ai", {}).get("total_calls", 0)),
-                str(run.get("ai", {}).get("total_tokens", 0)),
-                str(run.get("errors", 0)),
-            ]))
-        
-        Path(output_path).write_text("\n".join(lines))
-        return f"Exported to {output_path}"
-    
-    def get_dashboard_data(self) -> Dict[str, Any]:
-        """Get data for dashboard"""
-        report = self.generate_report()
-        
-        return {
-            "summary": report.get("summary", {}),
-            "trends": report.get("trends", {}),
-            "recommendations": report.get("recommendations", []),
-            "current": self.get_current_metrics(),
-        }
-
-
-class PerformanceAnalyzer:
-    """Analyze performance bottlenecks"""
+class ExecutionAnalytics:
+    """Analytics for task execution"""
     
     def __init__(self):
-        self.data: List[Dict] = []
+        self.task_metrics: Dict[str, TaskMetrics] = {}
+        self.worker_metrics: Dict[int, WorkerMetrics] = {}
+        self.start_time = time.time()
     
-    def record(self, operation: str, duration: float, metadata: Dict = None):
-        """Record operation timing"""
-        self.data.append({
-            "operation": operation,
-            "duration": duration,
-            "timestamp": time.time(),
-            "metadata": metadata or {},
-        })
+    def record_task_start(self, task_id: str, worker_id: int = 0):
+        """Record task start"""
+        self.task_metrics[task_id] = TaskMetrics(
+            task_id=task_id,
+            start_time=time.time(),
+            worker_id=worker_id,
+            status="running",
+        )
     
-    def get_slowest_operations(self, limit: int = 10) -> List[Dict]:
-        """Get slowest operations"""
-        sorted_data = sorted(self.data, key=lambda x: x["duration"], reverse=True)
-        return sorted_data[:limit]
+    def record_task_end(self, task_id: str, success: bool = True, error: str = ""):
+        """Record task end"""
+        if task_id in self.task_metrics:
+            metric = self.task_metrics[task_id]
+            metric.end_time = time.time()
+            metric.status = "completed" if success else "failed"
+            metric.error = error
+            
+            # Update worker metrics
+            self._update_worker(metric.worker_id, success, metric.duration)
     
-    def get_operation_stats(self, operation: str) -> Dict[str, Any]:
-        """Get statistics for operation"""
-        op_data = [d for d in self.data if d["operation"] == operation]
+    def _update_worker(self, worker_id: int, success: bool, duration: float):
+        """Update worker metrics"""
+        if worker_id not in self.worker_metrics:
+            self.worker_metrics[worker_id] = WorkerMetrics(worker_id)
         
-        if not op_data:
-            return {"count": 0}
+        wm = self.worker_metrics[worker_id]
         
-        durations = [d["duration"] for d in op_data]
+        if success:
+            wm.tasks_completed += 1
+        else:
+            wm.tasks_failed += 1
+        
+        wm.total_duration += duration
+        wm.avg_duration = wm.total_duration / (wm.tasks_completed + wm.tasks_failed)
+    
+    def get_summary(self) -> Dict:
+        """Get analytics summary"""
+        total_tasks = len(self.task_metrics)
+        completed = sum(1 for m in self.task_metrics.values() if m.status == "completed")
+        failed = sum(1 for m in self.task_metrics.values() if m.status == "failed")
+        
+        durations = [m.duration for m in self.task_metrics.values() if m.end_time > 0]
+        avg_duration = sum(durations) / len(durations) if durations else 0
+        
+        total_time = time.time() - self.start_time
+        throughput = completed / total_time if total_time > 0 else 0
         
         return {
-            "count": len(durations),
-            "total": sum(durations),
-            "avg": statistics.mean(durations),
-            "min": min(durations),
-            "max": max(durations),
-            "p50": statistics.median(durations),
-            "p95": sorted(durations)[int(len(durations) * 0.95)] if durations else 0,
+            "total_tasks": total_tasks,
+            "completed": completed,
+            "failed": failed,
+            "success_rate": completed / total_tasks if total_tasks > 0 else 0,
+            "avg_duration": avg_duration,
+            "total_time": total_time,
+            "throughput": throughput,
+            "workers": {
+                wid: {
+                    "completed": wm.tasks_completed,
+                    "failed": wm.tasks_failed,
+                    "avg_duration": wm.avg_duration,
+                    "success_rate": wm.success_rate,
+                }
+                for wid, wm in self.worker_metrics.items()
+            },
         }
     
-    def get_bottlenecks(self) -> List[str]:
-        """Identify bottlenecks"""
+    def get_worker_load(self) -> Dict[int, float]:
+        """Get worker load distribution"""
+        total_duration = sum(
+            wm.total_duration for wm in self.worker_metrics.values()
+        )
+        
+        if total_duration == 0:
+            return {wid: 0 for wid in self.worker_metrics}
+        
+        return {
+            wid: wm.total_duration / total_duration
+            for wid, wm in self.worker_metrics.items()
+        }
+    
+    def get_bottlenecks(self) -> List[Dict]:
+        """Find bottlenecks"""
         bottlenecks = []
         
-        for op in set(d["operation"] for d in self.data):
-            stats = self.get_operation_stats(op)
-            if stats.get("avg", 0) > 10:  # > 10 seconds
-                bottlenecks.append(f"{op}: {stats['avg']:.1f}s avg")
+        # Find slow tasks
+        durations = [m.duration for m in self.task_metrics.values() if m.end_time > 0]
+        if durations:
+            threshold = max(durations) * 0.8
+            slow_tasks = [
+                m for m in self.task_metrics.values()
+                if m.end_time > 0 and m.duration > threshold
+            ]
+            
+            for m in slow_tasks:
+                bottlenecks.append({
+                    "type": "slow_task",
+                    "task_id": m.task_id,
+                    "duration": m.duration,
+                })
         
         return bottlenecks
+    
+    def export_json(self) -> str:
+        """Export analytics as JSON"""
+        import json
+        return json.dumps(self.get_summary(), indent=2)
 
 
 # Global analytics
-_analytics: Optional[AnalyticsEngine] = None
+_analytics: ExecutionAnalytics = None
 
 
-def get_analytics() -> AnalyticsEngine:
-    """Get analytics engine"""
+def get_analytics() -> ExecutionAnalytics:
+    """Get analytics instance"""
     global _analytics
     if _analytics is None:
-        _analytics = AnalyticsEngine()
+        _analytics = ExecutionAnalytics()
     return _analytics
