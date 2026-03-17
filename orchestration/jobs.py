@@ -1,290 +1,358 @@
-"""Job scheduler for background tasks"""
+"""Distributed job execution with graph-based task distribution"""
 
-import os
 import asyncio
 import logging
-import uuid
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, Any, List, Set, Optional, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from collections import defaultdict
 from enum import Enum
+import uuid
+import time
 
 logger = logging.getLogger("orchestration.jobs")
 
 
-class JobStatus(Enum):
-    """Job status"""
-    PENDING = "pending"
+class JobStatus(str, Enum):
+    CREATED = "created"
+    QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
 
 
-class JobPriority(Enum):
-    """Job priority"""
-    LOW = 1
-    NORMAL = 2
-    HIGH = 3
-    CRITICAL = 4
-
-
 @dataclass
 class Job:
-    """Background job"""
+    """Distributed job"""
     id: str
     name: str
     func: Callable
     args: tuple = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
-    status: str = JobStatus.PENDING.value
-    priority: int = JobPriority.NORMAL.value
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    kwargs: dict = field(default_factory=dict)
+    status: JobStatus = JobStatus.CREATED
+    dependencies: Set[str] = field(default_factory=set)
     result: Any = None
     error: Optional[str] = None
-    retry_count: int = 0
-    max_retries: int = 3
+    created_at: float = field(default_factory=time.time)
+    started_at: float = 0
+    finished_at: float = 0
+    
+    @property
+    def duration(self) -> float:
+        if self.started_at > 0:
+            end = self.finished_at or time.time()
+            return end - self.started_at
+        return 0
 
 
-class JobScheduler:
-    """Background job scheduler"""
+@dataclass
+class JobResult:
+    """Job execution result"""
+    job_id: str
+    success: bool
+    result: Any = None
+    error: Optional[str] = None
+    duration: float = 0
+
+
+class JobGraph:
+    """Graph of interdependent jobs"""
+    
+    def __init__(self):
+        self.jobs: Dict[str, Job] = {}
+        self.edges: Dict[str, Set[str]] = defaultdict(set)
+        self.reverse_edges: Dict[str, Set[str]] = defaultdict(set)
+    
+    def add_job(self, job: Job):
+        """Add job to graph"""
+        self.jobs[job.id] = job
+        self.edges[job.id] = set()
+        self.reverse_edges[job.id] = set()
+    
+    def add_dependency(self, job_id: str, depends_on: str):
+        """job_id depends on depends_on"""
+        if job_id not in self.jobs or depends_on not in self.jobs:
+            return
+        
+        self.jobs[job_id].dependencies.add(depends_on)
+        self.edges[depends_on].add(job_id)
+        self.reverse_edges[job_id].add(depends_on)
+    
+    def get_ready_jobs(self) -> List[Job]:
+        """Get jobs ready to execute"""
+        ready = []
+        
+        for job in self.jobs.values():
+            if job.status != JobStatus.CREATED:
+                continue
+            
+            deps_met = all(
+                self.jobs[d].status == JobStatus.COMPLETED
+                for d in job.dependencies
+            )
+            
+            if deps_met:
+                ready.append(job)
+        
+        return ready
+    
+    def get_execution_layers(self) -> List[List[Job]]:
+        """Get parallel execution layers"""
+        in_degree = {jid: len(j.dependencies) for jid, j in self.jobs.items()}
+        layers = []
+        remaining = set(self.jobs.keys())
+        
+        while remaining:
+            layer = [
+                self.jobs[jid] for jid in remaining
+                if in_degree.get(jid, 0) == 0
+            ]
+            
+            if not layer:
+                break
+            
+            layers.append(layer)
+            
+            for job in layer:
+                remaining.discard(job.id)
+                for dependent in self.edges[job.id]:
+                    in_degree[dependent] -= 1
+        
+        return layers
+    
+    def is_complete(self) -> bool:
+        """Check if all jobs done"""
+        return all(
+            j.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+            for j in self.jobs.values()
+        )
+    
+    def has_failures(self) -> bool:
+        """Check for failed jobs"""
+        return any(j.status == JobStatus.FAILED for j in self.jobs.values())
+
+
+class JobSplitter:
+    """Split large jobs into subtasks"""
+    
+    @staticmethod
+    def split_items(
+        items: List[Any],
+        num_chunks: int,
+    ) -> List[List[Any]]:
+        """Split items into chunks"""
+        chunk_size = max(1, len(items) // num_chunks)
+        return [items[i:i+chunk_size] for i in range(0, len(items), chunk_size)]
+    
+    @staticmethod
+    def split_by_weight(
+        items: List[Dict],
+        weights: Dict[str, float],
+    ) -> Dict[str, List]:
+        """Split by weight/processing time"""
+        result = defaultdict(list)
+        
+        for item in items:
+            key = item.get("key", "default")
+            result[key].append(item)
+        
+        return dict(result)
+    
+    @staticmethod
+    def create_job_dag(
+        name: str,
+        items: List[Any],
+        processor: Callable,
+        parallelism: int = 4,
+    ) -> JobGraph:
+        """Create DAG from items"""
+        graph = JobGraph()
+        
+        # Split items
+        chunks = JobSplitter.split_items(items, parallelism)
+        
+        # Create jobs for each chunk
+        for i, chunk in enumerate(chunks):
+            job = Job(
+                id=f"{name}_chunk_{i}",
+                name=f"chunk_{i}",
+                func=processor,
+                args=(chunk,),
+            )
+            graph.add_job(job)
+        
+        # Create aggregator job
+        aggregator = Job(
+            id=f"{name}_aggregator",
+            name="aggregator",
+            func=lambda results: results,
+            args=([graph.jobs[f"{name}_chunk_{i}"].result for i in range(len(chunks))],),
+        )
+        
+        # Add dependencies
+        for i in range(len(chunks)):
+            graph.add_dependency(
+                f"{name}_aggregator",
+                f"{name}_chunk_{i}",
+            )
+        
+        graph.add_job(aggregator)
+        
+        return graph
+
+
+class JobExecutor:
+    """Execute job graph"""
     
     def __init__(self, max_workers: int = 4):
         self.max_workers = max_workers
-        self.jobs: Dict[str, Job] = {}
-        self.running_jobs: Dict[str, asyncio.Task] = {}
-        self.queue: asyncio.PriorityQueue = None
-        self._scheduler_task: Optional[asyncio.Task] = None
-        self._running = False
+        self.results: Dict[str, JobResult] = {}
     
-    def _init_queue(self):
-        """Initialize priority queue"""
-        if self.queue is None:
-            self.queue = asyncio.PriorityQueue()
-    
-    async def start(self):
-        """Start scheduler"""
-        if self._running:
-            return
+    async def execute(self, graph: JobGraph) -> Dict[str, JobResult]:
+        """Execute job graph"""
+        # Get execution order
+        layers = graph.get_execution_layers()
         
-        self._init_queue()
-        self._running = True
-        
-        # Start worker tasks
-        self._scheduler_task = asyncio.create_task(self._scheduler_loop())
-        
-        for i in range(self.max_workers):
-            asyncio.create_task(self._worker_loop(i))
-        
-        logger.info(f"Job scheduler started with {self.max_workers} workers")
-    
-    async def stop(self):
-        """Stop scheduler"""
-        self._running = False
-        
-        if self._scheduler_task:
-            self._scheduler_task.cancel()
-        
-        # Wait for running jobs
-        for task in self.running_jobs.values():
-            task.cancel()
-        
-        logger.info("Job scheduler stopped")
-    
-    async def _scheduler_loop(self):
-        """Main scheduler loop"""
-        while self._running:
-            # Find pending jobs
-            pending = [
-                (job.priority, job.id, job)
-                for job in self.jobs.values()
-                if job.status == JobStatus.PENDING.value
+        # Process layer by layer
+        for layer in layers:
+            # Execute all jobs in layer concurrently
+            tasks = [
+                self._execute_job(job)
+                for job in layer
             ]
             
-            # Sort by priority
-            pending.sort(key=lambda x: (x[0], x[2].created_at))
+            await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Add to queue
-            for priority, job_id, job in pending[:self.max_workers]:
-                await self.queue.put((priority, job_id))
-                job.status = JobStatus.RUNNING.value
-                job.started_at = datetime.now().isoformat()
-            
-            await asyncio.sleep(1)
-    
-    async def _worker_loop(self, worker_id: int):
-        """Worker loop"""
-        logger.info(f"Worker {worker_id} started")
+            # Check for failures
+            if graph.has_failures():
+                logger.warning("Job execution failed, stopping")
+                break
         
-        while self._running:
-            try:
-                # Get job from queue
-                priority, job_id = await asyncio.wait_for(
-                    self.queue.get(),
-                    timeout=1.0
-                )
-                
-                job = self.jobs.get(job_id)
-                
-                if job:
-                    await self._execute_job(job)
-                
-                self.queue.task_done()
-                
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error(f"Worker {worker_id} error: {e}")
+        return self.results
     
     async def _execute_job(self, job: Job):
-        """Execute a job"""
+        """Execute single job"""
+        job.status = JobStatus.RUNNING
+        job.started_at = time.time()
+        
         try:
-            logger.info(f"Executing job: {job.name}")
-            
-            # Run job
             if asyncio.iscoroutinefunction(job.func):
-                job.result = await job.func(*job.args, **job.kwargs)
+                result = await job.func(*job.args, **job.kwargs)
             else:
-                job.result = job.func(*job.args, **job.kwargs)
+                result = job.func(*job.args, **job.kwargs)
             
-            # Mark completed
-            job.status = JobStatus.COMPLETED.value
-            job.completed_at = datetime.now().isoformat()
+            job.status = JobStatus.COMPLETED
+            job.result = result
+            job.finished_at = time.time()
             
-            logger.info(f"Job completed: {job.name}")
+            self.results[job.id] = JobResult(
+                job_id=job.id,
+                success=True,
+                result=result,
+                duration=job.duration,
+            )
             
         except Exception as e:
-            logger.error(f"Job failed: {job.name} - {e}")
-            
+            job.status = JobStatus.FAILED
             job.error = str(e)
+            job.finished_at = time.time()
             
-            # Retry if possible
-            if job.retry_count < job.max_retries:
-                job.retry_count += 1
-                job.status = JobStatus.PENDING.value
-            else:
-                job.status = JobStatus.FAILED.value
-                job.completed_at = datetime.now().isoformat()
-        
-        finally:
-            if job.id in self.running_jobs:
-                del self.running_jobs[job.id]
+            self.results[job.id] = JobResult(
+                job_id=job.id,
+                success=False,
+                error=str(e),
+                duration=job.duration,
+            )
+
+
+class JobScheduler:
+    """High-level job scheduler"""
     
-    def submit(
+    def __init__(self, num_workers: int = 4):
+        self.executor = JobExecutor(num_workers)
+        self.graphs: Dict[str, JobGraph] = {}
+    
+    def submit(self, graph: JobGraph) -> str:
+        """Submit job graph"""
+        graph_id = str(uuid.uuid4())
+        self.graphs[graph_id] = graph
+        
+        # Set all jobs to QUEUED
+        for job in graph.jobs.values():
+            job.status = JobStatus.QUEUED
+        
+        return graph_id
+    
+    async def run(self, graph_id: str) -> Dict[str, JobResult]:
+        """Run job graph"""
+        graph = self.graphs.get(graph_id)
+        if not graph:
+            return {}
+        
+        return await self.executor.execute(graph)
+    
+    async def run_all(self) -> Dict[str, Dict[str, JobResult]]:
+        """Run all submitted graphs"""
+        results = {}
+        
+        for graph_id in self.graphs:
+            results[graph_id] = await self.run(graph_id)
+        
+        return results
+
+
+# Example: Process pipeline with DAG
+class PipelineProcessor:
+    """Process pipeline using DAG"""
+    
+    def __init__(self, num_workers: int = 4):
+        self.scheduler = JobScheduler(num_workers)
+    
+    async def process(
         self,
-        name: str,
-        func: Callable,
-        *args,
-        priority: int = JobPriority.NORMAL.value,
-        max_retries: int = 3,
-        **kwargs,
-    ) -> str:
-        """Submit a job"""
-        job_id = str(uuid.uuid4())[:8]
+        items: List[Any],
+        stages: List[Callable],
+    ) -> Any:
+        """Process items through stages"""
+        current = items
         
-        job = Job(
-            id=job_id,
-            name=name,
-            func=func,
-            args=args,
-            kwargs=kwargs,
-            priority=priority,
-            max_retries=max_retries,
-        )
+        for i, stage in enumerate(stages):
+            # Create jobs for this stage
+            graph = JobGraph()
+            
+            chunks = JobSplitter.split_items(current, self.max_workers)
+            
+            for j, chunk in enumerate(chunks):
+                job = Job(
+                    id=f"stage_{i}_chunk_{j}",
+                    name=f"stage_{i}_chunk_{j}",
+                    func=stage,
+                    args=(chunk,),
+                )
+                graph.add_job(job)
+            
+            # Submit and run
+            graph_id = self.scheduler.submit(graph)
+            results = await self.scheduler.run(graph_id)
+            
+            # Collect results
+            current = [
+                r.result
+                for r in results.values()
+                if r.success and r.result
+            ]
+            current = [item for sublist in current for item in sublist]
         
-        self.jobs[job_id] = job
-        
-        logger.info(f"Job submitted: {name} ({job_id})")
-        
-        return job_id
-    
-    def submit_async(self, name: str, func: Callable, *args, **kwargs) -> str:
-        """Submit async job"""
-        return self.submit(name, func, *args, **kwargs)
-    
-    def get_job(self, job_id: str) -> Optional[Job]:
-        """Get job by ID"""
-        return self.jobs.get(job_id)
-    
-    def cancel_job(self, job_id: str) -> bool:
-        """Cancel a job"""
-        job = self.jobs.get(job_id)
-        
-        if not job:
-            return False
-        
-        if job.status == JobStatus.RUNNING.value:
-            job.status = JobStatus.CANCELLED.value
-            return True
-        
-        return False
-    
-    def get_status(self) -> Dict[str, Any]:
-        """Get scheduler status"""
-        return {
-            "running": self._running,
-            "total_jobs": len(self.jobs),
-            "pending": sum(1 for j in self.jobs.values() if j.status == JobStatus.PENDING.value),
-            "running_count": sum(1 for j in self.jobs.values() if j.status == JobStatus.RUNNING.value),
-            "completed": sum(1 for j in self.jobs.values() if j.status == JobStatus.COMPLETED.value),
-            "failed": sum(1 for j in self.jobs.values() if j.status == JobStatus.FAILED.value),
-            "workers": self.max_workers,
-        }
-    
-    def list_jobs(self, status: str = None) -> List[Dict[str, Any]]:
-        """List jobs"""
-        jobs = self.jobs.values()
-        
-        if status:
-            jobs = [j for j in jobs if j.status == status]
-        
-        return [
-            {
-                "id": j.id,
-                "name": j.name,
-                "status": j.status,
-                "priority": j.priority,
-                "created_at": j.created_at,
-                "started_at": j.started_at,
-                "completed_at": j.completed_at,
-                "error": j.error,
-            }
-            for j in jobs
-        ]
+        return current
 
 
 # Global scheduler
 _scheduler: Optional[JobScheduler] = None
 
 
-def get_job_scheduler() -> JobScheduler:
-    """Get global job scheduler"""
+def get_job_scheduler(num_workers: int = 4) -> JobScheduler:
+    """Get job scheduler"""
     global _scheduler
     if _scheduler is None:
-        _scheduler = JobScheduler()
+        _scheduler = JobScheduler(num_workers)
     return _scheduler
-
-
-# Convenience decorators
-def schedule(priority: int = JobPriority.NORMAL.value, max_retries: int = 3):
-    """Decorator to schedule a function"""
-    def decorator(func: Callable):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            scheduler = get_job_scheduler()
-            return scheduler.submit(
-                func.__name__,
-                func,
-                *args,
-                priority=priority,
-                max_retries=max_retries,
-                **kwargs,
-            )
-        return wrapper
-    return decorator
-
-
-from functools import wraps
