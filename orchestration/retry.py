@@ -1,18 +1,17 @@
-"""Retry strategies for failed operations"""
+"""Retry strategies for distributed tasks"""
 
-import time
 import asyncio
 import logging
-from typing import Callable, Any, Optional, List
+import time
+from typing import Callable, Any, Optional, Type
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 
 logger = logging.getLogger("orchestration.retry")
 
 
-class BackoffStrategy(Enum):
-    """Backoff strategy"""
+class RetryStrategy(str, Enum):
+    FIXED = "fixed"
     LINEAR = "linear"
     EXPONENTIAL = "exponential"
     FIBONACCI = "fibonacci"
@@ -24,118 +23,174 @@ class RetryConfig:
     max_attempts: int = 3
     initial_delay: float = 1.0
     max_delay: float = 60.0
-    backoff: BackoffStrategy = BackoffStrategy.EXPONENTIAL
-    multiplier: float = 2.0
+    strategy: RetryStrategy = RetryStrategy.EXPONENTIAL
+    backoff_multiplier: float = 2.0
     jitter: bool = True
 
 
-class RetryError(Exception):
-    """Retry exhausted error"""
-    def __init__(self, attempts: int, last_error: Exception):
-        self.attempts = attempts
-        self.last_error = last_error
-        super().__init__(f"Failed after {attempts} attempts: {last_error}")
-
-
-class Retry:
-    """Retry decorator with backoff"""
+class RetryPolicy:
+    """Retry policy with various strategies"""
     
     def __init__(self, config: RetryConfig = None):
         self.config = config or RetryConfig()
+        self.attempt = 0
     
-    def _calculate_delay(self, attempt: int) -> float:
-        """Calculate delay for attempt"""
-        if self.config.backoff == BackoffStrategy.LINEAR:
-            delay = self.config.initial_delay * attempt
+    def get_delay(self) -> float:
+        """Calculate delay based on strategy"""
+        delay = self.config.initial_delay
         
-        elif self.config.backoff == BackoffStrategy.EXPONENTIAL:
-            delay = self.config.initial_delay * (self.config.multiplier ** (attempt - 1))
-        
-        elif self.config.backoff == BackoffStrategy.FIBONACCI:
-            # Fibonacci: 1, 1, 2, 3, 5, 8...
-            fib = [1, 1]
-            for i in range(2, attempt + 1):
-                fib.append(fib[i-1] + fib[i-2])
-            delay = self.config.initial_delay * fib[min(attempt, len(fib)-1)]
-        
-        else:
+        if self.config.strategy == RetryStrategy.FIXED:
             delay = self.config.initial_delay
         
-        # Cap at max delay
-        delay = min(delay, self.config.max_delay)
+        elif self.config.strategy == RetryStrategy.LINEAR:
+            delay = self.config.initial_delay * (self.attempt + 1)
         
-        # Add jitter
+        elif self.config.strategy == RetryStrategy.EXPONENTIAL:
+            delay = self.config.initial_delay * (self.config.backoff_multiplier ** self.attempt)
+        
+        elif self.config.strategy == RetryStrategy.FIBONACCI:
+            delay = self.config.initial_delay * self._fibonacci(self.attempt + 1)
+        
+        # Apply jitter
         if self.config.jitter:
             import random
             delay = delay * (0.5 + random.random())
         
-        return delay
+        return min(delay, self.config.max_delay)
     
-    def execute(self, func: Callable, *args, **kwargs) -> Any:
-        """Execute with retry"""
-        last_error = None
-        
-        for attempt in range(1, self.config.max_attempts + 1):
-            try:
-                return func(*args, **kwargs)
-            
-            except Exception as e:
-                last_error = e
-                
-                if attempt >= self.config.max_attempts:
-                    logger.error(f"Retry exhausted after {attempt} attempts")
-                    raise RetryError(attempt, e)
-                
-                delay = self._calculate_delay(attempt)
-                logger.warning(f"Attempt {attempt} failed: {e}. Retrying in {delay:.1f}s...")
-                time.sleep(delay)
-        
-        raise RetryError(self.config.max_attempts, last_error)
+    def _fibonacci(self, n: int) -> int:
+        """Fibonacci number"""
+        if n <= 1:
+            return 1
+        a, b = 1, 1
+        for _ in range(n - 1):
+            a, b = b, a + b
+        return b
     
-    async def execute_async(self, func: Callable, *args, **kwargs) -> Any:
-        """Execute async with retry"""
-        last_error = None
+    def should_retry(self) -> bool:
+        """Check if should retry"""
+        return self.attempt < self.config.max_attempts
+    
+    def reset(self):
+        """Reset attempt counter"""
+        self.attempt = 0
+
+
+def with_retry(
+    func: Callable,
+    config: RetryConfig = None,
+    retry_on: tuple = (Exception,),
+) -> Callable:
+    """Decorator to add retry logic"""
+    
+    async def async_wrapper(*args, **kwargs):
+        policy = RetryPolicy(config)
         
-        for attempt in range(1, self.config.max_attempts + 1):
+        while policy.should_retry():
             try:
                 return await func(*args, **kwargs)
+            except retry_on as e:
+                policy.attempt += 1
+                if policy.should_retry():
+                    delay = policy.get_delay()
+                    logger.warning(f"Retry {policy.attempt}/{policy.config.max_attempts} after {delay:.2f}s: {e}")
+                    await asyncio.sleep(delay)
+                else:
+                    raise
+    
+    def sync_wrapper(*args, **kwargs):
+        policy = RetryPolicy(config)
+        
+        while policy.should_retry():
+            try:
+                return func(*args, **kwargs)
+            except retry_on as e:
+                policy.attempt += 1
+                if policy.should_retry():
+                    delay = policy.get_delay()
+                    logger.warning(f"Retry {policy.attempt}/{policy.config.max_attempts} after {delay:.2f}s: {e}")
+                    time.sleep(delay)
+                else:
+                    raise
+    
+    import asyncio
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper
+    return sync_wrapper
+
+
+class CircuitBreaker:
+    """Circuit breaker pattern"""
+    
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+        expected_exception: Type = Exception,
+    ):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.expected_exception = expected_exception
+        
+        self.failure_count = 0
+        self.last_failure_time = 0
+        self.state = "closed"  # closed, open, half_open
+    
+    def call(self, func: Callable, *args, **kwargs) -> Any:
+        """Call function with circuit breaker"""
+        
+        if self.state == "open":
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = "half_open"
+            else:
+                raise Exception("Circuit breaker is OPEN")
+        
+        try:
+            result = func(*args, **kwargs)
             
-            except Exception as e:
-                last_error = e
-                
-                if attempt >= self.config.max_attempts:
-                    raise RetryError(attempt, e)
-                
-                delay = self._calculate_delay(attempt)
-                logger.warning(f"Attempt {attempt} failed: {e}. Retrying in {delay:.1f}s...")
-                await asyncio.sleep(delay)
-        
-        raise RetryError(self.config.max_attempts, last_error)
-
-
-def retry(
-    max_attempts: int = 3,
-    initial_delay: float = 1.0,
-    backoff: BackoffStrategy = BackoffStrategy.EXPONENTIAL,
-):
-    """Decorator for retry"""
-    config = RetryConfig(
-        max_attempts=max_attempts,
-        initial_delay=initial_delay,
-        backoff=backoff,
-    )
+            if self.state == "half_open":
+                self.state = "closed"
+                self.failure_count = 0
+            
+            return result
+            
+        except self.expected_exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            
+            if self.failure_count >= self.failure_threshold:
+                self.state = "open"
+            
+            raise
     
-    def decorator(func: Callable):
-        async def async_wrapper(*args, **kwargs):
-            retry_obj = Retry(config)
-            return await retry_obj.execute_async(func, *args, **kwargs)
+    async def call_async(self, func: Callable, *args, **kwargs) -> Any:
+        """Call async function with circuit breaker"""
         
-        def sync_wrapper(*args, **kwargs):
-            retry_obj = Retry(config)
-            return retry_obj.execute(func, *args, **kwargs)
+        if self.state == "open":
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = "half_open"
+            else:
+                raise Exception("Circuit breaker is OPEN")
         
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        return sync_wrapper
+        try:
+            result = await func(*args, **kwargs)
+            
+            if self.state == "half_open":
+                self.state = "closed"
+                self.failure_count = 0
+            
+            return result
+            
+        except self.expected_exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            
+            if self.failure_count >= self.failure_threshold:
+                self.state = "open"
+            
+            raise
     
-    return decorator
+    def reset(self):
+        """Reset circuit breaker"""
+        self.failure_count = 0
+        self.state = "closed"
