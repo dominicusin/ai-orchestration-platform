@@ -1,211 +1,208 @@
-"""Web UI для мониторинга pipeline"""
+"""Web UI for DAG monitoring"""
 
 import json
-import os
-from pathlib import Path
+import logging
+from typing import Dict, Any, List, Optional
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from datetime import datetime
-import urllib.parse
+from urllib.parse import urlparse, parse_qs
+
+logger = logging.getLogger("orchestration.web_ui")
 
 
-class PipelineHandler(BaseHTTPRequestHandler):
-    """HTTP обработчик для pipeline мониторинга"""
+class DAGRequestHandler(BaseHTTPRequestHandler):
+    """HTTP handler for DAG monitoring UI"""
     
     def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
+        """Handle GET requests"""
+        parsed = urlparse(self.path)
         path = parsed.path
         
         if path == "/" or path == "/index.html":
-            self.send_html(self.dashboard())
+            self.send_html(self.get_main_page())
         elif path == "/api/status":
             self.send_json(self.get_status())
         elif path == "/api/metrics":
             self.send_json(self.get_metrics())
-        elif path == "/api/logs":
-            self.send_json(self.get_logs())
-        elif path == "/health":
-            self.send_json({"status": "ok", "timestamp": datetime.now().isoformat()})
+        elif path == "/api/tasks":
+            self.send_json(self.get_tasks())
+        elif path == "/api/layers":
+            self.send_json(self.get_layers())
+        elif path == "/api/dag":
+            self.send_json(self.get_dag())
         else:
             self.send_error(404)
     
-    def get_status(self):
-        """Получение статуса pipeline"""
-        output_path = Path("./Surypus2")
-        
-        status = {
-            "running": False,
-            "phases": {},
-            "files": {},
-            "errors": 0,
-        }
-        
-        # Проверяем файлы
-        src_count = len(list(output_path.glob("src/*.hs"))) if output_path.exists() else 0
-        qml_count = len(list(output_path.glob("qml/*.qml"))) if output_path.exists() else 0
-        jasper_count = len(list(output_path.glob("reports/jasper/*.jrxml"))) if output_path.exists() else 0
-        
-        status["files"] = {
-            "haskell": src_count,
-            "qml": qml_count,
-            "jasper": jasper_count,
-            "total": src_count + qml_count + jasper_count,
-        }
-        
-        # Читаем state
-        state_file = output_path / ".pipeline_state.json"
-        if state_file.exists():
-            try:
-                state = json.loads(state_file.read_text())
-                status["phases"] = state
-            except:
-                pass
-        
-        return status
-    
-    def get_metrics(self):
-        """Получение метрик"""
-        output_path = Path("./Surypus2/metrics.json")
-        if output_path.exists():
-            try:
-                return json.loads(output_path.read_text())
-            except:
-                pass
-        return {"error": "No metrics"}
-    
-    def get_logs(self):
-        """Получение логов"""
-        log_file = Path("./Surypus2/pipeline.log")
-        if log_file.exists():
-            lines = log_file.read_text().splitlines()[-50:]
-            return {"logs": lines, "count": len(lines)}
-        return {"logs": [], "count": 0}
-    
-    def dashboard(self):
-        """HTML dashboard"""
-        return """<!DOCTYPE html>
-<html>
-<head>
-    <title>AI Pipeline Monitor</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-               background: #1a1a2e; color: #eee; min-height: 100vh; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        h1 { color: #00d4ff; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
-        .card { background: #16213e; border-radius: 12px; padding: 20px; border: 1px solid #0f3460; }
-        .card h2 { color: #00d4ff; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
-        .stat { font-size: 36px; font-weight: bold; color: #fff; }
-        .stat.haskell { color: #5c8aff; }
-        .stat.qml { color: #ff6b6b; }
-        .stat.reports { color: #4ecdc4; }
-        .stat.error { color: #ff4757; }
-        .phase { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #0f3460; }
-        .phase:last-child { border: none; }
-        .phase-name { color: #aaa; }
-        .phase-status { font-weight: bold; }
-        .phase-status.done { color: #4ecdc4; }
-        .phase-status.pending { color: #666; }
-        .logs { background: #0f0f1a; padding: 15px; border-radius: 8px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
-        .log-line { padding: 2px 0; color: #888; }
-        .log-line.error { color: #ff4757; }
-        .log-line.warning { color: #ffa502; }
-        .log-line.info { color: #00d4ff; }
-        .btn { display: inline-block; padding: 10px 20px; background: #00d4ff; color: #1a1a2e; 
-               border-radius: 6px; text-decoration: none; font-weight: bold; margin-right: 10px; }
-        .btn:hover { background: #00b8e6; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .timestamp { color: #666; font-size: 12px; }
-    </style>
-    <script>
-        async function update() {
-            try {
-                const status = await fetch('/api/status').then(r => r.json());
-                const metrics = await fetch('/api/metrics').then(r => r.json());
-                
-                document.getElementById('haskell').textContent = status.files.haskell || 0;
-                document.getElementById('qml').textContent = status.files.qml || 0;
-                document.getElementById('reports').textContent = status.files.jasper || 0;
-                document.getElementById('total').textContent = status.files.total || 0;
-                
-                if (metrics.runtime_seconds) {
-                    const mins = Math.floor(metrics.runtime_seconds / 60);
-                    const secs = Math.floor(metrics.runtime_seconds % 60);
-                    document.getElementById('runtime').textContent = mins + 'm ' + secs + 's';
-                }
-            } catch(e) { console.error(e); }
-        }
-        setInterval(update, 5000);
-        update();
-    </script>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🤖 AI Pipeline Monitor</h1>
-            <span class="timestamp">""" + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</span>
-        </div>
-        
-        <div class="grid">
-            <div class="card">
-                <h2>Haskell Files</h2>
-                <div class="stat haskell" id="haskell">0</div>
-            </div>
-            <div class="card">
-                <h2>QML Files</h2>
-                <div class="stat qml" id="qml">0</div>
-            </div>
-            <div class="card">
-                <h2>Reports</h2>
-                <div class="stat reports" id="reports">0</div>
-            </div>
-            <div class="card">
-                <h2>Runtime</h2>
-                <div class="stat" id="runtime">0m 0s</div>
-            </div>
-        </div>
-        
-        <div class="grid" style="margin-top: 20px;">
-            <div class="card">
-                <h2>Total Files</h2>
-                <div class="stat" id="total">0</div>
-            </div>
-            <div class="card">
-                <h2>Actions</h2>
-                <a href="/api/status" class="btn">Refresh</a>
-                <a href="/health" class="btn" style="background: #4ecdc4;">Health</a>
-            </div>
-        </div>
-    </div>
-</body>
-</html>"""
-    
-    def send_json(self, data):
+    def send_html(self, html: str):
+        """Send HTML response"""
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(data, indent=2).encode())
-    
-    def send_html(self, html):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", "text/html")
         self.end_headers()
         self.wfile.write(html.encode())
     
-    def log_message(self, format, *args):
-        pass  # Suppress logging
+    def send_json(self, data: Dict):
+        """Send JSON response"""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+    
+    def get_main_page(self) -> str:
+        """Get main HTML page"""
+        return """<!DOCTYPE html>
+<html>
+<head>
+    <title>DAG Execution Monitor</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+               background: #1a1a2e; color: #eee; padding: 20px; }
+        h1 { color: #00d4ff; margin-bottom: 20px; }
+        .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        .card { background: #16213e; padding: 20px; border-radius: 8px; border: 1px solid #0f3460; }
+        .card h3 { color: #888; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
+        .card .value { font-size: 28px; font-weight: bold; color: #00d4ff; }
+        .card.success .value { color: #00ff88; }
+        .card.failed .value { color: #ff4757; }
+        .section { background: #16213e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .section h2 { color: #00d4ff; margin-bottom: 15px; font-size: 18px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #0f3460; }
+        th { color: #888; font-weight: 500; }
+        .status-running { color: #ffd700; }
+        .status-completed { color: #00ff88; }
+        .status-failed { color: #ff4757; }
+        .layer { display: flex; align-items: center; gap: 10px; padding: 10px; background: #0f3460; margin-bottom: 5px; border-radius: 4px; }
+        .layer-num { background: #00d4ff; color: #000; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+        .layer-tasks { flex: 1; color: #aaa; }
+        .refresh { position: fixed; top: 20px; right: 20px; background: #00d4ff; color: #000; 
+                   border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🔄 DAG Execution Monitor</h1>
+    <button class="refresh" onclick="location.reload()">Refresh</button>
+    
+    <div class="dashboard" id="dashboard"></div>
+    
+    <div class="section">
+        <h2>📊 Execution Layers</h2>
+        <div id="layers"></div>
+    </div>
+    
+    <div class="section">
+        <h2>📋 Recent Tasks</h2>
+        <table>
+            <thead><tr><th>Task</th><th>Layer</th><th>Status</th><th>Duration</th></tr></thead>
+            <tbody id="tasks"></tbody>
+        </table>
+    </div>
+    
+    <script>
+        async function update() {
+            const status = await fetch('/api/status').then(r => r.json());
+            const metrics = await fetch('/api/metrics').then(r => r.json());
+            const tasks = await fetch('/api/tasks').then(r => r.json());
+            const layers = await fetch('/api/layers').then(r => r.json());
+            
+            document.getElementById('dashboard').innerHTML = `
+                <div class="card"><h3>Total Tasks</h3><div class="value">${status.total_tasks}</div></div>
+                <div class="card success"><h3>Completed</h3><div class="value">${status.completed}</div></div>
+                <div class="card failed"><h3>Failed</h3><div class="value">${status.failed}</div></div>
+                <div class="card"><h3>Success Rate</h3><div class="value">${(status.success_rate * 100).toFixed(1)}%</div></div>
+                <div class="card"><h3>Duration</h3><div class="value">${status.total_duration.toFixed(1)}s</div></div>
+            `;
+            
+            document.getElementById('layers').innerHTML = layers.map(l => `
+                <div class="layer">
+                    <span class="layer-num">L${l.layer}</span>
+                    <span class="layer-tasks">${l.tasks} tasks</span>
+                    <span>${l.completed} ✓</span>
+                    <span>${l.failed} ✗</span>
+                    <span>${l.duration.toFixed(2)}s</span>
+                </div>
+            `).join('');
+            
+            document.getElementById('tasks').innerHTML = tasks.slice(0, 20).map(t => `
+                <tr>
+                    <td>${t.task_name}</td>
+                    <td>${t.layer}</td>
+                    <td class="status-${t.status}">${t.status}</td>
+                    <td>${t.duration.toFixed(3)}s</td>
+                </tr>
+            `).join('');
+        }
+        
+        update();
+        setInterval(update, 2000);
+    </script>
+</body>
+</html>"""
+    
+    def get_status(self) -> Dict:
+        """Get execution status"""
+        from orchestration.graph_monitor import get_monitor
+        return get_monitor().get_summary()
+    
+    def get_metrics(self) -> Dict:
+        """Get metrics"""
+        from orchestration.graph_monitor import get_monitor
+        return get_monitor().get_summary()
+    
+    def get_tasks(self) -> List[Dict]:
+        """Get tasks"""
+        from orchestration.graph_monitor import get_monitor
+        m = get_monitor()
+        return [
+            {
+                "task_id": t.task_id,
+                "task_name": t.task_name,
+                "layer": t.layer,
+                "status": t.status,
+                "duration": t.duration,
+            }
+            for t in m.task_metrics.values()
+        ]
+    
+    def get_layers(self) -> List[Dict]:
+        """Get layer info"""
+        from orchestration.graph_monitor import get_monitor
+        return get_monitor().get_layer_summary()
+    
+    def get_dag(self) -> Dict:
+        """Get DAG structure"""
+        return {"nodes": [], "edges": []}
 
 
-def start_server(port: int = 8080):
-    """Запуск web сервера"""
-    server = HTTPServer(("0.0.0.0", port), PipelineHandler)
-    print(f"🌐 Web UI: http://localhost:{port}")
-    print(f"📊 API: http://localhost:{port}/api/status")
-    print(f"💚 Health: http://localhost:{port}/health")
-    server.serve_forever()
+class WebUIServer:
+    """Web UI server"""
+    
+    def __init__(self, host: str = "localhost", port: int = 8080):
+        self.host = host
+        self.port = port
+        self.server = None
+    
+    def start(self):
+        """Start server"""
+        self.server = HTTPServer((self.host, self.port), DAGRequestHandler)
+        logger.info(f"DAG Monitor UI: http://{self.host}:{self.port}")
+        self.server.serve_forever()
+    
+    def stop(self):
+        """Stop server"""
+        if self.server:
+            self.server.shutdown()
+
+
+# Global server
+_server: Optional[WebUIServer] = None
+
+
+def start_ui(host: str = "localhost", port: int = 8080):
+    """Start web UI"""
+    global _server
+    _server = WebUIServer(host, port)
+    _server.start()
 
 
 if __name__ == "__main__":
-    start_server()
+    start_ui()
