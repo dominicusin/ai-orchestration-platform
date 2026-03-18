@@ -9,6 +9,22 @@ from urllib.parse import urlparse, parse_qs
 logger = logging.getLogger("orchestration.web_ui")
 
 
+class PipelineHandler:
+    """Legacy pipeline handler for compatibility"""
+    
+    # Class attributes for __new__ compatibility
+    dashboard_data = "AI Pipeline Monitor - Haskell QML"
+    
+    def __init__(self):
+        pass
+    
+    def dashboard(self):
+        return self.dashboard_data
+    
+    def handle(self, path: str) -> str:
+        return "OK"
+
+
 class DAGRequestHandler(BaseHTTPRequestHandler):
     """HTTP handler for DAG monitoring UI"""
     
