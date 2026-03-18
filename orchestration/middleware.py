@@ -1,263 +1,155 @@
-"""API middleware for request/response processing"""
+"""Middleware for DAG execution"""
 
-import os
 import time
 import logging
-import hashlib
-from typing import Dict, Any, Optional, Callable
-from dataclasses import dataclass
-from datetime import datetime
-from functools import wraps
+from typing import Callable, Any, List, Dict
+from dataclasses import dataclass, field
 
 logger = logging.getLogger("orchestration.middleware")
 
 
 @dataclass
-class Request:
-    """HTTP request"""
-    method: str
-    path: str
-    headers: Dict[str, str]
-    body: Any
-    query_params: Dict[str, str]
-    client_ip: str = ""
-
-
-@dataclass
-class Response:
-    """HTTP response"""
-    status_code: int
-    body: Any
-    headers: Dict[str, str] = None
-    
-    def __post_init__(self):
-        if self.headers is None:
-            self.headers = {}
+class MiddlewareContext:
+    """Context passed through middleware"""
+    task_id: str
+    data: Any
+    metadata: Dict = field(default_factory=dict)
+    start_time: float = field(default_factory=time.time)
 
 
 class Middleware:
-    """Base middleware class"""
+    """Base middleware"""
     
-    async def process_request(self, request: Request) -> Request:
+    def process(self, context: MiddlewareContext, next_handler: Callable) -> Any:
         """Process request"""
-        return request
-    
-    async def process_response(self, response: Response, request: Request) -> Response:
-        """Process response"""
-        return response
+        raise NotImplementedError
 
 
 class LoggingMiddleware(Middleware):
-    """Log requests and responses"""
+    """Log task execution"""
     
-    async def process_request(self, request: Request) -> Request:
-        logger.info(f"{request.method} {request.path}")
-        return request
-    
-    async def process_response(self, response: Response, request: Request) -> Response:
-        logger.info(f"{request.method} {request.path} -> {response.status_code}")
-        return response
+    def process(self, context: MiddlewareContext, next_handler: Callable) -> Any:
+        logger.info(f"Starting task: {context.task_id}")
+        
+        try:
+            result = next_handler(context)
+            logger.info(f"Completed task: {context.task_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Task {context.task_id} failed: {e}")
+            raise
 
 
 class TimingMiddleware(Middleware):
-    """Add timing headers"""
+    """Measure execution time"""
+    
+    def process(self, context: MiddlewareContext, next_handler: Callable) -> Any:
+        start = time.time()
+        
+        result = next_handler(context)
+        
+        duration = time.time() - start
+        context.metadata["duration"] = duration
+        
+        return result
+
+
+class ValidationMiddleware(Middleware):
+    """Validate input"""
+    
+    def __init__(self, validator: Callable):
+        self.validator = validator
+    
+    def process(self, context: MiddlewareContext, next_handler: Callable) -> Any:
+        if not self.validator(context.data):
+            raise ValueError(f"Validation failed for {context.task_id}")
+        
+        return next_handler(context)
+
+
+class RetryMiddleware(Middleware):
+    """Retry on failure"""
+    
+    def __init__(self, max_attempts: int = 3):
+        self.max_attempts = max_attempts
+    
+    def process(self, context: MiddlewareContext, next_handler: Callable) -> Any:
+        last_error = None
+        
+        for attempt in range(self.max_attempts):
+            try:
+                return next_handler(context)
+            except Exception as e:
+                last_error = e
+                if attempt < self.max_attempts - 1:
+                    logger.warning(f"Retry {attempt + 1} for {context.task_id}")
+        
+        raise last_error
+
+
+class CachingMiddleware(Middleware):
+    """Cache results"""
     
     def __init__(self):
-        self.start_times: Dict[str, float] = {}
+        self.cache: Dict[str, Any] = {}
     
-    async def process_request(self, request: Request) -> Request:
-        request_id = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
-        self.start_times[request_id] = time.time()
-        request.headers["X-Request-ID"] = request_id
-        return request
-    
-    async def process_response(self, response: Response, request: Request) -> Response:
-        request_id = request.headers.get("X-Request-ID")
+    def process(self, context: MiddlewareContext, next_handler: Callable) -> Any:
+        cache_key = f"{context.task_id}:{hash(str(context.data))}"
         
-        if request_id and request_id in self.start_times:
-            duration = time.time() - self.start_times[request_id]
-            response.headers["X-Response-Time"] = f"{duration:.3f}s"
-            del self.start_times[request_id]
+        if cache_key in self.cache:
+            logger.debug(f"Cache hit for {context.task_id}")
+            return self.cache[cache_key]
         
-        return response
-
-
-class CorsMiddleware(Middleware):
-    """Handle CORS"""
-    
-    def __init__(
-        self,
-        allow_origins: list = None,
-        allow_methods: list = None,
-        allow_headers: list = None,
-    ):
-        self.allow_origins = allow_origins or ["*"]
-        self.allow_methods = allow_methods or ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-        self.allow_headers = allow_headers or ["*"]
-    
-    async def process_request(self, request: Request) -> Request:
-        # Handle preflight
-        if request.method == "OPTIONS":
-            # Would handle preflight here
-            pass
-        return request
-    
-    async def process_response(self, response: Response, request: Request) -> Response:
-        response.headers["Access-Control-Allow-Origin"] = ", ".join(self.allow_origins)
-        response.headers["Access-Control-Allow-Methods"] = ", ".join(self.allow_methods)
-        response.headers["Access-Control-Allow-Headers"] = ", ".join(self.allow_headers)
-        return response
-
-
-class RateLimitMiddleware(Middleware):
-    """Rate limiting"""
-    
-    def __init__(self, requests_per_minute: int = 60):
-        self.requests_per_minute = requests_per_minute
-        self.requests: Dict[str, list] = {}
-    
-    async def process_request(self, request: Request) -> Request:
-        client_id = request.client_ip or "default"
+        result = next_handler(context)
+        self.cache[cache_key] = result
         
-        now = time.time()
-        minute_ago = now - 60
-        
-        # Clean old requests
-        if client_id in self.requests:
-            self.requests[client_id] = [
-                t for t in self.requests[client_id]
-                if t > minute_ago
-            ]
-        else:
-            self.requests[client_id] = []
-        
-        # Check limit
-        if len(self.requests[client_id]) >= self.requests_per_minute:
-            raise Exception("Rate limit exceeded")
-        
-        self.requests[client_id].append(now)
-        
-        return request
-
-
-class AuthMiddleware(Middleware):
-    """Authentication"""
-    
-    def __init__(self, api_keys: Dict[str, str] = None):
-        self.api_keys = api_keys or {}
-    
-    async def process_request(self, request: Request) -> Request:
-        # Check API key
-        api_key = request.headers.get("X-API-Key")
-        
-        if api_key and api_key in self.api_keys:
-            return request
-        
-        # Allow unauthenticated for some paths
-        if request.path in ["/health", "/docs", "/openapi.json"]:
-            return request
-        
-        raise Exception("Unauthorized")
-
-
-class CompressionMiddleware(Middleware):
-    """Compress responses"""
-    
-    async def process_response(self, response: Response, request: Request) -> Response:
-        # Check if client accepts gzip
-        accept_encoding = request.headers.get("Accept-Encoding", "")
-        
-        if "gzip" in accept_encoding and isinstance(response.body, str):
-            import gzip
-            
-            compressed = gzip.compress(response.body.encode())
-            response.body = compressed
-            response.headers["Content-Encoding"] = "gzip"
-        
-        return response
-
-
-class CacheMiddleware(Middleware):
-    """Cache responses"""
-    
-    def __init__(self):
-        self.cache: Dict[str, tuple] = {}  # key -> (response, timestamp)
-        self.ttl = 300  # 5 minutes
-    
-    async def process_request(self, request: Request) -> Request:
-        # Check cache
-        cache_key = f"{request.method}:{request.path}"
-        
-        if request.method == "GET" and cache_key in self.cache:
-            response, timestamp = self.cache[cache_key]
-            
-            if time.time() - timestamp < self.ttl:
-                # Return cached response
-                # Would modify flow to return cached
-                pass
-        
-        return request
-    
-    async def process_response(self, response: Response, request: Request) -> Response:
-        # Cache GET requests
-        if request.method == "GET" and response.status_code == 200:
-            cache_key = f"{request.method}:{request.path}"
-            self.cache[cache_key] = (response, time.time())
-        
-        return response
+        return result
 
 
 class MiddlewareChain:
-    """Chain of middleware"""
+    """Chain of middlewares"""
     
     def __init__(self):
-        self.middlewares: list = []
+        self.middlewares: List[Middleware] = []
     
     def add(self, middleware: Middleware):
-        """Add middleware to chain"""
         self.middlewares.append(middleware)
     
-    async def process_request(self, request: Request) -> Request:
-        """Process request through middleware"""
-        for middleware in self.middlewares:
-            request = await middleware.process_request(request)
-        return request
-    
-    async def process_response(self, response: Response, request: Request) -> Response:
-        """Process response through middleware"""
+    def execute(self, context: MiddlewareContext) -> Any:
+        """Execute middlewares in order"""
+        
+        def final_handler(ctx):
+            return ctx.data
+        
+        # Build chain (reverse order)
+        handler = final_handler
         for middleware in reversed(self.middlewares):
-            response = await middleware.process_response(response, request)
-        return response
+            old_handler = handler
+            
+            def make_wrapper(m, h):
+                def wrapper(ctx):
+                    return m.process(ctx, h)
+                return wrapper
+            
+            handler = make_wrapper(middleware, handler)
+        
+        return handler(context)
 
 
-def create_default_middleware_chain() -> MiddlewareChain:
-    """Create default middleware chain"""
+def create_middleware_chain(config: Dict) -> MiddlewareChain:
+    """Create middleware chain from config"""
     chain = MiddlewareChain()
     
-    chain.add(LoggingMiddleware())
-    chain.add(TimingMiddleware())
-    chain.add(CorsMiddleware())
-    chain.add(RateLimitMiddleware(requests_per_minute=60))
-    chain.add(CacheMiddleware())
+    if config.get("logging"):
+        chain.add(LoggingMiddleware())
+    
+    if config.get("timing"):
+        chain.add(TimingMiddleware())
+    
+    if config.get("caching"):
+        chain.add(CachingMiddleware())
+    
+    if config.get("retry"):
+        chain.add(RetryMiddleware(config.get("max_attempts", 3)))
     
     return chain
-
-
-# Decorator for middleware
-def use_middleware(middleware: Middleware):
-    """Decorator to add middleware to a handler"""
-    def decorator(func: Callable):
-        @wraps(func)
-        async def wrapper(request: Request):
-            # Process request
-            request = await middleware.process_request(request)
-            
-            # Call handler
-            response = await func(request)
-            
-            # Process response
-            response = await middleware.process_response(response, request)
-            
-            return response
-        return wrapper
-    return decorator
