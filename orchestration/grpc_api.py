@@ -1,60 +1,38 @@
-"""gRPC API for pipeline"""
+"""gRPC API for DAG execution"""
 
-from concurrent import futures
-import grpc
 import logging
-from pathlib import Path
+from typing import Dict, Any
 
-# Define proto service (simplified - would normally be from .proto file)
-class PipelineServiceServicer:
-    """gRPC servicer for pipeline"""
+logger = logging.getLogger("orchestration.grpc_api")
+
+
+class GRPCService:
+    """gRPC service stub"""
     
-    def __init__(self, pipeline):
-        self.pipeline = pipeline
+    def __init__(self, host: str = "localhost", port: int = 50051):
+        self.host = host
+        self.port = port
     
-    def ConvertFile(self, request, context):
-        """Convert single file"""
-        return ConvertFileResponse(
-            success=True,
-            output_path=f"converted/{request.file_name}",
-        )
+    def start(self):
+        logger.info(f"gRPC server would start on {self.host}:{self.port}")
     
-    def GetStatus(self, request, context):
-        """Get pipeline status"""
-        return StatusResponse(
-            running=False,
-            files_processed=53,
-        )
-
-
-def create_grpc_server(pipeline, port: int = 50051):
-    """Create gRPC server"""
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    # Add servicer
-    # pipeline_pb2_grpc.add_PipelineServiceServicer_to_server(
-    #     PipelineServiceServicer(pipeline), server
-    # )
-    server.add_insecure_port(f'[::]:{port}')
-    return server
-
-
-# For now, just a placeholder - would need actual proto definitions
-GRPC_AVAILABLE = False
-
-try:
-    import grpc
-    GRPC_AVAILABLE = True
-except ImportError:
-    pass
-
-
-def start_grpc_server(pipeline, port: int = 50051):
-    """Start gRPC server"""
-    if not GRPC_AVAILABLE:
-        logging.warning("gRPC not available, skipping")
-        return None
+    def stop(self):
+        logger.info("gRPC server stopped")
     
-    server = create_grpc_server(pipeline, port)
-    server.start()
-    logging.info(f"gRPC server started on port {port}")
-    return server
+    def submit_task(self, task: Dict) -> Dict:
+        """Submit task via gRPC"""
+        return {"status": "submitted", "task_id": task.get("id")}
+    
+    def get_status(self, task_id: str) -> Dict:
+        """Get task status"""
+        return {"task_id": task_id, "status": "pending"}
+
+
+_grpc_service = None
+
+
+def get_grpc_service() -> GRPCService:
+    global _grpc_service
+    if _grpc_service is None:
+        _grpc_service = GRPCService()
+    return _grpc_service
