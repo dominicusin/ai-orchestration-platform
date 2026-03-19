@@ -1,208 +1,73 @@
-"""GraphQL API for pipeline"""
+"""GraphQL API for DAG execution"""
 
-import os
-import json
-import asyncio
 import logging
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any, List
 
-try:
-    import strawberry
-    from strawberry import Schema
-    from strawberry.fastapi import GraphQLRouter
-    STRAWBERRY_AVAILABLE = True
-except ImportError:
-    STRAWBERRY_AVAILABLE = False
-
-logger = logging.getLogger("orchestration.graphql")
+logger = logging.getLogger("orchestration.graphql_api")
 
 
-# GraphQL Types
-@strawberry.type
-class FileType:
-    path: str
-    size: int
-    modified: str
-    format: str
-
-
-@strawberry.type
-class PhaseType:
-    name: str
-    status: str
-    files: int
-    duration: float
-
-
-@strawberry.type
-class MetricsType:
-    runtime_seconds: float
-    total_files: int
-    ai_calls: int
-    ai_tokens: int
-    cache_hit_rate: float
-
-
-@strawberry.type
-class ProviderType:
-    name: str
-    base_url: str
-    model: str
-    available: bool
-
-
-@strawberry.type
-class ConversionResult:
-    success: bool
-    output: str
-    errors: List[str]
-
-
-# Queries
-@strawberry.type
-class Query:
-    @strawberry.field
-    def status(self) -> Dict[str, Any]:
-        """Get pipeline status"""
-        base = Path("./Surypus2")
-        if not base.exists():
-            return {"running": False, "files": 0}
-        
-        return {
-            "running": False,
-            "files": {
-                "haskell": len(list(base.glob("src/*.hs"))),
-                "qml": len(list(base.glob("qml/*.qml"))),
-                "reports": len(list(base.glob("reports/**/*.jrxml"))),
-            }
-        }
+class GraphQLSchema:
+    """GraphQL schema definition"""
     
-    @strawberry.field
-    def metrics(self) -> Optional[MetricsType]:
-        """Get pipeline metrics"""
-        metrics_file = Path("./Surypus2/metrics.json")
-        if metrics_file.exists():
-            data = json.loads(metrics_file.read_text())
-            return MetricsType(
-                runtime_seconds=data.get("runtime_seconds", 0),
-                total_files=53,
-                ai_calls=data.get("ai", {}).get("total_calls", 0),
-                ai_tokens=data.get("ai", {}).get("total_tokens", 0),
-                cache_hit_rate=data.get("cache", {}).get("hit_rate", 0),
-            )
-        return None
+    type_defs = """
+    type Task {
+        id: ID!
+        name: String!
+        status: String!
+        result: String
+    }
     
-    @strawberry.field
-    def files(self, format: Optional[str] = None) -> List[FileType]:
-        """Get generated files"""
-        base = Path("./Surypus2")
-        files = []
-        
-        patterns = {
-            "haskell": "src/*.hs",
-            "qml": "qml/*.qml",
-            "reports": "reports/**/*.jrxml",
-        }
-        
-        glob_patterns = [patterns[format]] if format and format in patterns else [
-            "src/*.hs", "qml/*.qml", "reports/**/*.jrxml"
-        ]
-        
-        for pattern in glob_patterns:
-            for f in base.glob(pattern):
-                if f.is_file():
-                    files.append(FileType(
-                        path=str(f.relative_to(base)),
-                        size=f.stat().st_size,
-                        modified=str(f.stat().st_mtime),
-                        format=f.suffix[1:],
-                    ))
-        
-        return files
+    type Query {
+        tasks: [Task!]!
+        task(id: ID!): Task
+    }
     
-    @strawberry.field
-    def providers(self) -> List[ProviderType]:
-        """Get available providers"""
-        from orchestration.ai.providers import OPENAI_COMPATIBLE_PROVIDERS
-        
+    type Mutation {
+        submitTask(name: String!): Task!
+    }
+    """
+
+
+class GraphQLResolver:
+    """GraphQL resolver"""
+    
+    def resolve_tasks(self) -> List[Dict]:
+        from orchestration.graph_monitor import get_monitor
+        m = get_monitor()
         return [
-            ProviderType(
-                name=name,
-                base_url=config.base_url,
-                model=config.model,
-                available=bool(os.getenv(config.api_key_env)),
-            )
-            for name, config in list(OPENAI_COMPATIBLE_PROVIDERS.items())[:20]
+            {"id": t.task_id, "name": t.task_name, "status": t.status}
+            for t in m.task_metrics.values()
         ]
-
-
-# Mutations
-@strawberry.type
-class Mutation:
-    @strawberry.mutation
-    async def convert(
-        self,
-        code: str,
-        source_format: str,
-        target_format: str,
-    ) -> ConversionResult:
-        """Convert code between formats"""
-        # Would call AI here
-        return ConversionResult(
-            success=True,
-            output=f"# Converted from {source_format} to {target_format}",
-            errors=[],
-        )
     
-    @strawberry.mutation
-    def clear_cache(self) -> str:
-        """Clear cache"""
-        cache_dir = Path("./Surypus2/.cache")
-        if cache_dir.exists():
-            import shutil
-            shutil.rmtree(cache_dir)
-        return "Cache cleared"
-    
-    @strawberry.mutation
-    def generate_api_key(self, name: str) -> str:
-        """Generate API key"""
-        from orchestration.security import APIKeyManager
-        keys = APIKeyManager()
-        return keys.generate_key(name)
-
-
-# Schema
-schema = Schema(query=Query, mutation=Mutation)
-
-
-def create_graphql_router() -> Optional[GraphQLRouter]:
-    """Create GraphQL router"""
-    if not STRAWBERRY_AVAILABLE:
+    def resolve_task(self, id: str) -> Dict:
+        from orchestration.graph_monitor import get_monitor
+        m = get_monitor()
+        if id in m.task_metrics:
+            t = m.task_metrics[id]
+            return {"id": t.task_id, "name": t.task_name, "status": t.status}
         return None
-    
-    return GraphQLRouter(schema)
 
 
-def start_graphql_server(port: int = 4000):
-    """Start GraphQL server"""
-    if not STRAWBERRY_AVAILABLE:
-        print("Strawberry not available, install with: pip install strawberry[fastapi]")
-        return
+class GraphQLServer:
+    """GraphQL server stub"""
     
-    import uvicorn
-    from fastapi import FastAPI
-    from strawberry.fastapi import GraphQLRouter
+    def __init__(self, port: int = 4000):
+        self.port = port
+        self.resolver = GraphQLResolver()
     
-    app = FastAPI(title="AI Pipeline GraphQL")
-    router = create_graphql_router()
-    app.include_router(router, prefix="/graphql")
+    def execute(self, query: str) -> Dict:
+        logger.info(f"Executing GraphQL: {query}")
+        return {"data": {"tasks": self.resolver.resolve_tasks()}}
     
-    print(f"🔮 GraphQL: http://localhost:{port}/graphql")
-    print(f"   Playground: http://localhost:{port}/graphql")
-    
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    def start(self):
+        logger.info(f"GraphQL server would start on port {self.port}")
 
 
-if __name__ == "__main__":
-    start_graphql_server()
+_server = None
+
+
+def get_graphql_server() -> GraphQLServer:
+    global _server
+    if _server is None:
+        _server = GraphQLServer()
+    return _server
