@@ -1,23 +1,5 @@
-"""Circuit Breaker pattern implementation"""
+"""Circuit breaker module"""
 
-from .breaker import (
-    CircuitBreaker,
-    CircuitBreakerOpenError,
-    CircuitBreakerManager,
-    get_breaker,
-    circuit_breaker,
-    CircuitState,
-    CircuitBreakerConfig,
-    CircuitBreakerMetrics,
-)
+from orchestration.circuit_breaker.breaker import CircuitBreaker, get_breaker
 
-__all__ = [
-    "CircuitBreaker",
-    "CircuitBreakerOpenError", 
-    "CircuitBreakerManager",
-    "get_breaker",
-    "circuit_breaker",
-    "CircuitState",
-    "CircuitBreakerConfig",
-    "CircuitBreakerMetrics",
-]
+__all__ = ["CircuitBreaker", "get_breaker"]
