@@ -13,15 +13,22 @@ class CircuitState(Enum):
     HALF_OPEN = "half_open"
 
 
+class CircuitBreakerOpenError(Exception):
+    """Circuit breaker is open"""
+    pass
+
+
 class CircuitBreaker:
     """Circuit breaker pattern"""
     
     def __init__(
         self,
+        name: str = "default",
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
         expected_exception: type = Exception,
     ):
+        self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
@@ -63,7 +70,7 @@ class CircuitBreaker:
 _breakers = {}
 
 
-def get_breaker(name: str) -> CircuitBreaker:
+def get_breaker(name: str = "default", failure_threshold: int = 5, recovery_timeout: float = 60.0, timeout: float = None) -> CircuitBreaker:
     if name not in _breakers:
-        _breakers[name] = CircuitBreaker()
+        _breakers[name] = CircuitBreaker(failure_threshold, recovery_timeout)
     return _breakers[name]

@@ -32,3 +32,12 @@ def get_metrics() -> Metrics:
     if _metrics is None:
         _metrics = Metrics()
     return _metrics
+
+
+def create_metrics() -> Metrics:
+    return Metrics()
+
+
+def create_tracer():
+    """Create tracer for monitoring"""
+    return {"name": "tracer"}
