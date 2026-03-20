@@ -28,3 +28,10 @@ class StructuredLogger:
     def log(self, level: str, message: str, **kwargs):
         msg = f"{message} | {kwargs}" if kwargs else message
         getattr(self.logger, level.lower())(msg)
+
+
+class LogFormat:
+    """Log format helper"""
+    @staticmethod
+    def format(msg: str) -> str:
+        return f"[{datetime.now().isoformat()}] {msg}"
