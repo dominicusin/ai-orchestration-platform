@@ -1,17 +1,17 @@
 """AI module"""
 
-from .client import AsyncAIClient, AIConfig
-from .rlm_wrapper import RLMWrapper, RLMResult, create_rlm_wrapper
-from .providers import ProviderManager, get_provider_manager, list_providers, OPENAI_COMPATIBLE_PROVIDERS
+from typing import Dict, Any, List
 
-__all__ = [
-    "AsyncAIClient", 
-    "AIConfig", 
-    "RLMWrapper", 
-    "RLMResult", 
-    "create_rlm_wrapper",
-    "ProviderManager",
-    "get_provider_manager",
-    "list_providers",
-    "OPENAI_COMPATIBLE_PROVIDERS",
-]
+
+class AIClient:
+    """AI client stub"""
+    
+    def __init__(self, provider: str = "openai"):
+        self.provider = provider
+    
+    def complete(self, prompt: str) -> str:
+        return f"Response from {self.provider}"
+
+
+def get_client(provider: str = "openai") -> AIClient:
+    return AIClient(provider)
