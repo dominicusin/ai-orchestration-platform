@@ -1,5 +1,5 @@
 """Pipeline module"""
 
-from .pipeline import ConversionPipeline, run_pipeline
+from orchestration.pipeline.core import Pipeline
 
-__all__ = ["ConversionPipeline", "run_pipeline"]
+__all__ = ["Pipeline"]
