@@ -1,39 +1,31 @@
 """Random utilities"""
 
 import random
-import string
 from typing import List
 
 
-def random_int(min_val: int = 0, max_val: int = 100) -> int:
-    """Random integer"""
+def random_int_range(min_val: int, max_val: int) -> int:
+    """Random integer in range"""
     return random.randint(min_val, max_val)
 
 
-def random_float(min_val: float = 0.0, max_val: float = 1.0) -> float:
-    """Random float"""
+def random_float_range(min_val: float, max_val: float) -> float:
+    """Random float in range"""
     return random.uniform(min_val, max_val)
 
 
-def random_string(length: int = 10, charset: str = None) -> str:
-    """Random string"""
-    if charset is None:
-        charset = string.ascii_letters + string.digits
-    return ''.join(random.choice(charset) for _ in range(length))
+def random_choice_list(items: List) -> any:
+    """Random choice from list"""
+    return random.choice(items)
 
 
-def random_choice(choices: List) -> any:
-    """Random choice"""
-    return random.choice(choices)
+def random_sample_list(items: List, k: int) -> List:
+    """Random sample from list"""
+    return random.sample(items, k)
 
 
-def random_shuffle(items: List) -> List:
-    """Random shuffle"""
+def random_shuffle_list(items: List) -> List:
+    """Shuffle list"""
     result = items.copy()
     random.shuffle(result)
     return result
-
-
-def random_bool() -> bool:
-    """Random boolean"""
-    return random.choice([True, False])
