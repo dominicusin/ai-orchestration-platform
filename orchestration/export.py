@@ -1,104 +1,169 @@
-"""Export functionality for DAG results"""
+"""
+Export utilities
+Утилиты для экспорта данных
+"""
 
+import csv
 import json
-import logging
-from typing import Dict, Any, List
-from pathlib import Path
-from datetime import datetime
-
-logger = logging.getLogger("orchestration.export")
+import xml.etree.ElementTree as ET
+from typing import Any
 
 
 class Exporter:
-    """Base exporter"""
-    
+    """Базовый класс экспортера"""
+
     def export(self, data: Any, path: str):
+        """Экспорт данных"""
         raise NotImplementedError
 
 
 class JSONExporter(Exporter):
-    """Export to JSON"""
-    
+    """Экспорт в JSON"""
+
+    def __init__(self, indent: int = 2, ensure_ascii: bool = False):
+        self.indent = indent
+        self.ensure_ascii = ensure_ascii
+
     def export(self, data: Any, path: str):
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+        """Экспорт в JSON файл"""
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=self.indent, ensure_ascii=self.ensure_ascii, default=str)
 
 
 class CSVExporter(Exporter):
-    """Export to CSV"""
-    
+    """Экспорт в CSV"""
+
+    def __init__(self, delimiter: str = ",", include_header: bool = True):
+        self.delimiter = delimiter
+        self.include_header = include_header
+
     def export(self, data: Any, path: str):
-        import csv
-        
-        if isinstance(data, list) and data:
-            with open(path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=data[0].keys())
-                writer.writeheader()
+        """Экспорт в CSV файл"""
+        if not isinstance(data, list) or not data:
+            return
+
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            if isinstance(data[0], dict):
+                writer = csv.DictWriter(f, fieldnames=data[0].keys(), delimiter=self.delimiter)
+                if self.include_header:
+                    writer.writeheader()
+                writer.writerows(data)
+            else:
+                writer = csv.writer(f, delimiter=self.delimiter)
                 writer.writerows(data)
 
 
-class HTMLExporter(Exporter):
-    """Export to HTML"""
-    
-    def export(self, data: Dict, path: str):
-        html = f"""<!DOCTYPE html>
-<html>
-<head><title>DAG Execution Report</title></head>
-<body>
-<h1>DAG Execution Report</h1>
-<p>Generated: {datetime.now().isoformat()}</p>
-<pre>{json.dumps(data, indent=2)}</pre>
-</body>
-</html>"""
-        with open(path, "w") as f:
-            f.write(html)
+class XMLExporter(Exporter):
+    """Экспорт в XML"""
+
+    def __init__(self, root: str = "root", item: str = "item"):
+        self.root = root
+        self.item = item
+
+    def export(self, data: Any, path: str):
+        """Экспорт в XML файл"""
+        root = ET.Element(self.root)
+
+        if isinstance(data, list):
+            for item in data:
+                elem = ET.SubElement(root, self.item)
+                if isinstance(item, dict):
+                    for key, value in item.items():
+                        child = ET.SubElement(elem, key)
+                        child.text = str(value)
+                else:
+                    elem.text = str(item)
+
+        tree = ET.ElementTree(root)
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+
+
+class TextExporter(Exporter):
+    """Экспорт в текст"""
+
+    def __init__(self, separator: str = "\n"):
+        self.separator = separator
+
+    def export(self, data: Any, path: str):
+        """Экспорт в текстовый файл"""
+        with open(path, "w", encoding="utf-8") as f:
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        line = self.separator.join(f"{k}: {v}" for k, v in item.items())
+                    else:
+                        line = str(item)
+                    f.write(line + "\n")
+            elif isinstance(data, dict):
+                for key, value in data.items():
+                    f.write(f"{key}: {value}\n")
+            else:
+                f.write(str(data))
 
 
 class MarkdownExporter(Exporter):
-    """Export to Markdown"""
-    
-    def export(self, data: Dict, path: str):
-        md = f"""# DAG Execution Report
+    """Экспорт в Markdown"""
 
-Generated: {datetime.now().isoformat()}
+    def export(self, data: Any, path: str):
+        """Экспорт в Markdown файл"""
+        lines = []
 
-## Summary
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            # Table
+            columns = list(data[0].keys())
+            lines.append("| " + " | ".join(columns) + " |")
+            lines.append("|" + "|".join("---" for _ in columns) + "|")
 
-- Total Tasks: {data.get("total_tasks", 0)}
-- Completed: {data.get("completed", 0)}
-- Failed: {data.get("failed", 0)}
-- Success Rate: {data.get("success_rate", 0):.1%}
+            for row in data:
+                line = "| " + " | ".join(str(row.get(c, "")) for c in columns) + " |"
+                lines.append(line)
 
-## Details
+        elif isinstance(data, dict):
+            for key, value in data.items():
+                lines.append(f"**{key}**: {value}")
 
-```
-{json.dumps(data, indent=2)}
-```
-"""
-        with open(path, "w") as f:
-            f.write(md)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
 
 
-class ExporterFactory:
-    """Create exporter"""
-    
-    @staticmethod
-    def create(format: str) -> Exporter:
-        if format == "json":
-            return JSONExporter()
-        elif format == "csv":
-            return CSVExporter()
-        elif format == "html":
-            return HTMLExporter()
-        elif format == "md":
-            return MarkdownExporter()
+# Factory functions
+
+def get_exporter(format: str, **kwargs) -> Exporter:
+    """Получение экспортера по формату"""
+    exporters = {
+        "json": JSONExporter,
+        "csv": CSVExporter,
+        "xml": XMLExporter,
+        "text": TextExporter,
+        "markdown": MarkdownExporter,
+    }
+
+    if format not in exporters:
         raise ValueError(f"Unknown format: {format}")
 
+    return exporters[format](**kwargs)
 
-def export_results(data: Any, path: str, format: str = None):
-    """Export results"""
-    if format is None:
-        format = Path(path).suffix[1:]
-    
-    exporter = ExporterFactory.create(format)
-    exporter.export(data, path)
+
+def export_to_json(data: Any, path: str, **kwargs):
+    """Экспорт в JSON"""
+    JSONExporter(**kwargs).export(data, path)
+
+
+def export_to_csv(data: Any, path: str, **kwargs):
+    """Экспорт в CSV"""
+    CSVExporter(**kwargs).export(data, path)
+
+
+def export_to_xml(data: Any, path: str, **kwargs):
+    """Экспорт в XML"""
+    XMLExporter(**kwargs).export(data, path)
+
+
+def export_to_text(data: Any, path: str, **kwargs):
+    """Экспорт в текст"""
+    TextExporter(**kwargs).export(data, path)
+
+
+def export_to_markdown(data: Any, path: str):
+    """Экспорт в Markdown"""
+    MarkdownExporter().export(data, path)

@@ -1,7 +1,7 @@
 """Functools tools2 utilities"""
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 
 def cache_clear_func(func: Callable):

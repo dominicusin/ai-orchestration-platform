@@ -1,187 +1,226 @@
-"""Code formatter utilities"""
-
-import re
-import logging
-from typing import Optional
-
-logger = logging.getLogger("orchestration.formatters")
+import json
+from datetime import datetime
+from typing import Any
 
 
-class CodeFormatter:
-    """Format code output"""
+class Formatter:
+    """Базовый класс форматтера"""
 
-    @staticmethod
-    def format_haskell(code: str) -> str:
-        """Format Haskell code"""
-        lines = code.split("\n")
-        formatted = []
-
-        for line in lines:
-            # Remove trailing whitespace
-            line = line.rstrip()
-
-            # Fix indentation
-            if line.startswith("data ") or line.startswith("type "):
-                formatted.append("")
-
-            formatted.append(line)
-
-        # Remove extra blank lines
-        result = []
-        prev_empty = False
-
-        for line in formatted:
-            is_empty = not line.strip()
-
-            if is_empty and prev_empty:
-                continue
-
-            result.append(line)
-            prev_empty = is_empty
-
-        return "\n".join(result)
-
-    @staticmethod
-    def format_qml(code: str) -> str:
-        """Format QML code"""
-        lines = code.split("\n")
-        formatted = []
-        indent = 0
-
-        for line in lines:
-            line = line.strip()
-
-            if not line:
-                formatted.append("")
-                continue
-
-            # Decrease indent for closing braces
-            if line.startswith("}") or line.startswith("]"):
-                indent = max(0, indent - 1)
-
-            # Add indentation
-            formatted.append("    " * indent + line)
-
-            # Increase indent for opening braces
-            if line.endswith("{"):
-                indent += 1
-
-        return "\n".join(formatted)
-
-    @staticmethod
-    def format_sql(code: str) -> str:
-        """Format SQL code"""
-        # Uppercase keywords
-        keywords = [
-            "SELECT", "FROM", "WHERE", "AND", "OR", "INSERT", "UPDATE", "DELETE",
-            "CREATE", "TABLE", "INDEX", "DROP", "ALTER", "JOIN", "LEFT", "RIGHT",
-            "INNER", "OUTER", "ON", "ORDER", "BY", "GROUP", "HAVING", "LIMIT",
-        ]
-
-        result = code
-        for keyword in keywords:
-            result = re.sub(
-                rf'\b{keyword}\b',
-                keyword,
-                result,
-                flags=re.IGNORECASE,
-            )
-
-        return result
-
-    @staticmethod
-    def remove_markdown(code: str) -> str:
-        """Remove markdown code blocks"""
-        # Remove ```haskell, ```qml, etc
-        code = re.sub(r'```\w*\n?', '', code)
-
-        # Remove leading/trailing whitespace
-        code = code.strip()
-
-        return code
-
-    @staticmethod
-    def normalize(code: str) -> str:
-        """Normalize code"""
-        # Remove BOM
-        code = code.replace("\ufeff", "")
-
-        # Normalize line endings
-        code = code.replace("\r\n", "\n")
-
-        # Remove multiple blank lines
-        code = re.sub(r'\n\n\n+', '\n\n', code)
-
-        return code
+    def format(self, data: Any) -> str:
+        """Форматирование данных"""
+        raise NotImplementedError
 
 
-class CodeLinter:
-    """Lint code for common issues"""
+class JSONFormatter(Formatter):
+    """JSON форматтер"""
 
-    @staticmethod
-    def lint_haskell(code: str) -> list:
-        """Lint Haskell code"""
-        issues = []
+    def __init__(self, indent: int = 2, ensure_ascii: bool = False):
+        self.indent = indent
+        self.ensure_ascii = ensure_ascii
 
-        lines = code.split("\n")
-
-        for i, line in enumerate(lines, 1):
-            # Check for tabs
-            if "\t" in line:
-                issues.append(f"Line {i}: Use spaces instead of tabs")
-
-            # Check for trailing whitespace
-            if line.rstrip() != line:
-                issues.append(f"Line {i}: Trailing whitespace")
-
-            # Check line length
-            if len(line) > 100:
-                issues.append(f"Line {i}: Line too long ({len(line)} chars)")
-
-        return issues
-
-    @staticmethod
-    def lint_qml(code: str) -> list:
-        """Lint QML code"""
-        issues = []
-
-        # Check balanced braces
-        if code.count("{") != code.count("}"):
-            issues.append("Unbalanced curly braces")
-
-        if code.count("[") != code.count("]"):
-            issues.append("Unbalanced square brackets")
-
-        if code.count("(") != code.count(")"):
-            issues.append("Unbalanced parentheses")
-
-        return issues
+    def format(self, data: Any) -> str:
+        return json.dumps(data, indent=self.indent, ensure_ascii=self.ensure_ascii, default=str)
 
 
-def format_code(code: str, language: str) -> str:
-    """Format code based on language"""
-    formatter = CodeFormatter()
+class PrettyJSONFormatter(Formatter):
+    """Красивый JSON форматтер с цветами (без цветов для совместимости)"""
 
-    code = formatter.normalize(code)
-    code = formatter.remove_markdown(language)
-
-    if language == "haskell":
-        return formatter.format_haskell(code)
-    elif language == "qml":
-        return formatter.format_qml(code)
-    elif language == "sql":
-        return formatter.format_sql(code)
-
-    return code
+    def format(self, data: Any) -> str:
+        return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False, default=str)
 
 
-def lint_code(code: str, language: str) -> list:
-    """Lint code"""
-    linter = CodeLinter()
+class TableFormatter(Formatter):
+    """Табличный форматтер"""
 
-    if language == "haskell":
-        return linter.lint_haskell(code)
-    elif language == "qml":
-        return linter.lint_qml(code)
+    def __init__(self, columns: list = None):
+        self.columns = columns or []
 
-    return []
+    def format(self, data: Any) -> str:
+        if not isinstance(data, list) or not data:
+            return str(data)
+
+        # Determine columns
+        if not self.columns:
+            if isinstance(data[0], dict):
+                self.columns = list(data[0].keys())
+            else:
+                self.columns = [f"Col{i}" for i in range(len(data[0]))]
+
+        # Build table
+        col_widths = {c: len(c) for c in self.columns}
+
+        for row in data:
+            if isinstance(row, dict):
+                for col in self.columns:
+                    val = str(row.get(col, ""))
+                    col_widths[col] = max(col_widths[col], len(val))
+
+        # Header
+        header = " | ".join(c.ljust(col_widths[c]) for c in self.columns)
+        separator = "-+-".join("-" * col_widths[c] for c in self.columns)
+
+        # Rows
+        rows = []
+        for row in data:
+            if isinstance(row, dict):
+                row_str = " | ".join(str(row.get(c, "")).ljust(col_widths[c]) for c in self.columns)
+            else:
+                row_str = " | ".join(str(v).ljust(col_widths[c]) for c, v in zip(self.columns, row))
+            rows.append(row_str)
+
+        return "\n".join([header, separator] + rows)
+
+
+class CSVFormatter(Formatter):
+    """CSV форматтер"""
+
+    def __init__(self, delimiter: str = ",", include_header: bool = True):
+        self.delimiter = delimiter
+        self.include_header = include_header
+
+    def format(self, data: Any) -> str:
+        if not isinstance(data, list) or not data:
+            return str(data)
+
+        lines = []
+
+        # Header
+        if self.include_header and isinstance(data[0], dict):
+            header = self.delimiter.join(data[0].keys())
+            lines.append(header)
+
+        # Rows
+        for row in data:
+            if isinstance(row, dict):
+                line = self.delimiter.join(str(v) for v in row.values())
+            else:
+                line = self.delimiter.join(str(v) for v in row)
+            lines.append(line)
+
+        return "\n".join(lines)
+
+
+class TextFormatter(Formatter):
+    """Текстовый форматтер"""
+
+    def format(self, data: Any) -> str:
+        if isinstance(data, dict):
+            lines = []
+            for key, value in data.items():
+                lines.append(f"{key}: {value}")
+            return "\n".join(lines)
+        elif isinstance(data, list):
+            return "\n".join(str(item) for item in data)
+        return str(data)
+
+
+class MarkdownFormatter(Formatter):
+    """Markdown форматтер"""
+
+    def format(self, data: Any) -> str:
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            # Table
+            columns = list(data[0].keys())
+            lines = []
+
+            # Header
+            lines.append("| " + " | ".join(columns) + " |")
+            lines.append("|" + "|".join("---" for _ in columns) + "|")
+
+            # Rows
+            for row in data:
+                line = "| " + " | ".join(str(row.get(c, "")) for c in columns) + " |"
+                lines.append(line)
+
+            return "\n".join(lines)
+        elif isinstance(data, dict):
+            lines = []
+            for key, value in data.items():
+                lines.append(f"**{key}**: {value}")
+            return "\n".join(lines)
+        return str(data)
+
+
+class XMLFormatter(Formatter):
+    """XML форматтер"""
+
+    def __init__(self, root: str = "root", item: str = "item"):
+        self.root = root
+        self.item = item
+
+    def format(self, data: Any) -> str:
+        lines = [f"<{self.root}>"]
+
+        if isinstance(data, list):
+            for item in data:
+                lines.append(f"  <{self.item}>")
+                if isinstance(item, dict):
+                    for key, value in item.items():
+                        lines.append(f"    <{key}>{value}</{key}>")
+                else:
+                    lines.append(f"    {item}")
+                lines.append(f"  </{self.item}>")
+        elif isinstance(data, dict):
+            for key, value in data.items():
+                lines.append(f"  <{key}>{value}</{key}>")
+
+        lines.append(f"</{self.root}>")
+        return "\n".join(lines)
+
+
+class TimestampFormatter(Formatter):
+    """Форматтер с timestamp"""
+
+    def __init__(self, formatter: Formatter, fmt: str = "%Y-%m-%d %H:%M:%S"):
+        self.formatter = formatter
+        self.fmt = fmt
+
+    def format(self, data: Any) -> str:
+        timestamp = datetime.now().strftime(self.fmt)
+        formatted = self.formatter.format(data)
+        return f"[{timestamp}]\n{formatted}"
+
+
+# Factory functions
+
+def get_formatter(format: str, **kwargs) -> Formatter:
+    """Получение форматтера по типу"""
+    formatters = {
+        "json": JSONFormatter,
+        "pretty_json": PrettyJSONFormatter,
+        "table": TableFormatter,
+        "csv": CSVFormatter,
+        "text": TextFormatter,
+        "markdown": MarkdownFormatter,
+        "xml": XMLFormatter,
+    }
+
+    if format not in formatters:
+        raise ValueError(f"Unknown format: {format}")
+
+    return formatters[format](**kwargs)
+
+
+def to_json(data: Any, **kwargs) -> str:
+    """Форматирование в JSON"""
+    return JSONFormatter(**kwargs).format(data)
+
+
+def to_table(data: Any, **kwargs) -> str:
+    """Форматирование в таблицу"""
+    return TableFormatter(**kwargs).format(data)
+
+
+def to_csv(data: Any, **kwargs) -> str:
+    """Форматирование в CSV"""
+    return CSVFormatter(**kwargs).format(data)
+
+
+def to_markdown(data: Any) -> str:
+    """Форматирование в Markdown"""
+    return MarkdownFormatter().format(data)
+
+
+def to_xml(data: Any, **kwargs) -> str:
+    """Форматирование в XML"""
+    return XMLFormatter(**kwargs).format(data)

@@ -1,9 +1,9 @@
 """Constants for DAG execution"""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     READY = "ready"
     RUNNING = "running"
@@ -12,13 +12,13 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     ATOMIC = "atomic"
     COMPOSITE = "composite"
     PIPELINE = "pipeline"
 
 
-class AgentCapability(str, Enum):
+class AgentCapability(StrEnum):
     FILE_READ = "file_read"
     FILE_WRITE = "file_write"
     LLM_CALL = "llm_call"

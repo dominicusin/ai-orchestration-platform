@@ -1,10 +1,9 @@
 """CLI for DAG execution"""
 
 import asyncio
-import sys
 import logging
+
 import click
-from typing import List
 
 logger = logging.getLogger("orchestration.cli")
 
@@ -22,17 +21,17 @@ def cli():
 def run(items: tuple, stages: tuple, workers: int):
     """Run DAG pipeline"""
     click.echo(f"Running DAG with {len(items)} items, {workers} workers")
-    
+
     # Build and execute
     from orchestration.graph_engine import execute_pipeline
-    
+
     items_list = list(items)
     stage_funcs = [lambda x: x for _ in stages]
-    
+
     async def main():
         results = await execute_pipeline(items_list, stage_funcs, workers)
         click.echo(f"Completed: {len(results)} tasks")
-    
+
     asyncio.run(main())
 
 
@@ -41,17 +40,17 @@ def run(items: tuple, stages: tuple, workers: int):
 def visualize(items: tuple):
     """Visualize DAG structure"""
     from orchestration.graph_recursive import RecursiveDAG
-    
+
     dag = RecursiveDAG()
     items_list = list(items) if items else list(range(100))
-    
+
     # Build sample DAG
     def decompose(items):
         n = len(items)
         if n <= 10:
             return {"atomic": items}
         return {"a": items[:n//2], "b": items[n//2:]}
-    
+
     dag.build_from_decomposition(
         task_id="root",
         task_name="root",
@@ -60,7 +59,7 @@ def visualize(items: tuple):
         get_handler=lambda i: lambda: i,
         get_capability=lambda i: None,
     )
-    
+
     click.echo(dag.visualize())
 
 
@@ -78,10 +77,10 @@ def serve(host: str, port: int):
 def status():
     """Show execution status"""
     from orchestration.graph_monitor import get_monitor
-    
+
     m = get_monitor()
     summary = m.get_summary()
-    
+
     click.echo("=== Execution Status ===")
     click.echo(f"Total: {summary['total_tasks']}")
     click.echo(f"Completed: {summary['completed']}")

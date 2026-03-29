@@ -1,27 +1,26 @@
 """AI providers"""
 
-from typing import Dict, Any, Optional
 
 
 class BaseProvider:
     """Base AI provider"""
-    
+
     name: str = "base"
-    
+
     def complete(self, prompt: str) -> str:
         raise NotImplementedError
 
 
 class OpenAIProvider(BaseProvider):
     name = "openai"
-    
+
     def complete(self, prompt: str) -> str:
         return f"[OpenAI] {prompt[:50]}..."
 
 
 class AnthropicProvider(BaseProvider):
     name = "anthropic"
-    
+
     def complete(self, prompt: str) -> str:
         return f"[Anthropic] {prompt[:50]}..."
 
@@ -30,7 +29,7 @@ class OllamaProvider(BaseProvider):
     name = "ollama"
     base_url = "http://localhost:11434"
     model = "llama2"
-    
+
     def complete(self, prompt: str) -> str:
         return f"[Ollama] {prompt[:50]}..."
 
@@ -42,7 +41,7 @@ _extra_providers = [
     "ai21", "stability", "character", "voyage", "jamba", "abacus", "maker"
 ]
 
-PROVIDERS: Dict[str, type] = {
+PROVIDERS: dict[str, type] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "ollama": OllamaProvider,
@@ -67,13 +66,11 @@ PROVIDERS: Dict[str, type] = {
     "inference": OpenAIProvider,
     "novita": OpenAIProvider,
     "deepinfra": OpenAIProvider,
-    "mistral": OpenAIProvider,
     "perplexity": OpenAIProvider,
     "x": OpenAIProvider,
     "meta": OpenAIProvider,
     "google": OpenAIProvider,
     "ai21": OpenAIProvider,
-    "cohere": OpenAIProvider,
     "stability": OpenAIProvider,
     "character": OpenAIProvider,
     "voyage": OpenAIProvider,
@@ -81,7 +78,6 @@ PROVIDERS: Dict[str, type] = {
     "abacus": OpenAIProvider,
     "maker": OpenAIProvider,
     "lightOn": OpenAIProvider,
-    "anyscale": OpenAIProvider,
     "beam": OpenAIProvider,
     "e2b": OpenAIProvider,
     "falcon": OpenAIProvider,
@@ -98,7 +94,6 @@ PROVIDERS: Dict[str, type] = {
     "qwen": OpenAIProvider,
     "ray": OpenAIProvider,
     "sagemaker": OpenAIProvider,
-    "together": OpenAIProvider,
     "tii": OpenAIProvider,
     "upstage": OpenAIProvider,
     "volcengine": OpenAIProvider,
@@ -110,11 +105,9 @@ PROVIDERS: Dict[str, type] = {
     "byteplus": OpenAIProvider,
     "chutes": OpenAIProvider,
     "deepbricks": OpenAIProvider,
-    "fireworks": OpenAIProvider,
     "goose": OpenAIProvider,
     "gradient": OpenAIProvider,
     "hyperbolic": OpenAIProvider,
-    "inference": OpenAIProvider,
     "juice": OpenAIProvider,
     "k0": OpenAIProvider,
     "langdock": OpenAIProvider,
@@ -125,7 +118,6 @@ PROVIDERS: Dict[str, type] = {
     "quark": OpenAIProvider,
     "riselab": OpenAIProvider,
     "sglang": OpenAIProvider,
-    "together": OpenAIProvider,
     "vllm": OpenAIProvider,
     "worker": OpenAIProvider,
     "xyz": OpenAIProvider,
@@ -147,16 +139,16 @@ OPENAI_COMPATIBLE_PROVIDERS = PROVIDERS.copy()
 
 class ProviderManager:
     """Manage AI providers"""
-    
+
     def __init__(self):
         self.providers = PROVIDERS.copy()
-    
-    def get(self, name: str) -> Optional[BaseProvider]:
+
+    def get(self, name: str) -> BaseProvider | None:
         provider_class = self.providers.get(name)
         if provider_class:
             return provider_class()
         return None
-    
+
     def list_all(self) -> list:
         return list(self.providers.keys())
 
@@ -171,7 +163,7 @@ def get_provider_manager() -> ProviderManager:
     return _provider_manager
 
 
-def get_provider(name: str) -> Optional[BaseProvider]:
+def get_provider(name: str) -> BaseProvider | None:
     """Get provider by name"""
     return get_provider_manager().get(name)
 

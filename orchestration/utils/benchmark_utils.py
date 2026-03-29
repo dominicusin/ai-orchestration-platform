@@ -1,21 +1,21 @@
 """Benchmarking utilities"""
 
-import time
 import functools
-from typing import Callable, Any
+import time
+from collections.abc import Callable
 
 
 class Timer:
     """Simple timer"""
-    
+
     def __init__(self):
         self.start = time.time()
         self.end = None
-    
+
     def stop(self) -> float:
         self.end = time.time()
         return self.elapsed()
-    
+
     def elapsed(self) -> float:
         end = self.end or time.time()
         return end - self.start

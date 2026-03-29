@@ -1,7 +1,7 @@
 """Itertools tools8 utilities"""
 
 import itertools
-from typing import Iterator, List
+from collections.abc import Iterator
 
 
 def chain_2(*iterables) -> Iterator:
@@ -14,6 +14,6 @@ def islice_2(iterable: Iterator, *args) -> Iterator:
     return itertools.islice(iterable, *args)
 
 
-def tee_2(iterable: Iterator, n: int = 2) -> List[Iterator]:
+def tee_2(iterable: Iterator, n: int = 2) -> list[Iterator]:
     """Tee iterable"""
     return itertools.tee(iterable, n)

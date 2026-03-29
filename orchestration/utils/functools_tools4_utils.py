@@ -1,7 +1,7 @@
 """Functools tools4 utilities"""
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 
 def wraps_update(wrapper: Callable, wrapped: Callable):

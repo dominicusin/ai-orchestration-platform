@@ -1,7 +1,8 @@
 """More functools utilities"""
 
 import functools
-from typing import Callable, Any
+from collections.abc import Callable
+from typing import Any
 
 
 def lru_cache_maxsize(maxsize: int = 128):

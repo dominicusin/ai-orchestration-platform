@@ -1,6 +1,5 @@
 """Itertools tools27 utilities"""
 
-import itertools
 
 
 def sorted_2(iterable, key=None, reverse=False):

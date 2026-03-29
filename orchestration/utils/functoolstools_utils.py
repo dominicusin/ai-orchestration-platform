@@ -1,7 +1,7 @@
 """Functools tools utilities"""
 
 import functools
-from typing import Callable, Any
+from collections.abc import Callable
 
 
 def cache_on_disk(func: Callable) -> Callable:

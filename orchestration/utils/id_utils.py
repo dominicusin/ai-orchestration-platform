@@ -1,7 +1,7 @@
 """ID utilities"""
 
-import uuid
 import hashlib
+import uuid
 from datetime import datetime
 
 

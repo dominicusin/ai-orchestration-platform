@@ -1,7 +1,6 @@
 """String utilities"""
 
 import re
-from typing import List
 
 
 def slugify(text: str) -> str:
@@ -30,7 +29,7 @@ def snake_to_camel(text: str) -> str:
     return components[0] + ''.join(x.title() for x in components[1:])
 
 
-def extract_numbers(text: str) -> List[int]:
+def extract_numbers(text: str) -> list[int]:
     """Extract numbers from text"""
     return [int(n) for n in re.findall(r'\d+', text)]
 

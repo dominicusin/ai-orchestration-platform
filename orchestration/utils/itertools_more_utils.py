@@ -1,7 +1,8 @@
 """More itertools utilities"""
 
 import itertools
-from typing import List, Iterator, Callable, Any
+from collections.abc import Callable, Iterator
+from typing import Any
 
 
 def count_func(start: int = 0, step: int = 1) -> Iterator[int]:
@@ -9,7 +10,7 @@ def count_func(start: int = 0, step: int = 1) -> Iterator[int]:
     return itertools.count(start, step)
 
 
-def cycle_iter(items: List) -> Iterator:
+def cycle_iter(items: list) -> Iterator:
     """Cycle through items infinitely"""
     return itertools.cycle(items)
 

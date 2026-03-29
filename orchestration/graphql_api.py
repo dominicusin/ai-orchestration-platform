@@ -1,14 +1,13 @@
 """GraphQL API for DAG execution"""
 
 import logging
-from typing import Dict, Any, List
 
 logger = logging.getLogger("orchestration.graphql_api")
 
 
 class GraphQLSchema:
     """GraphQL schema definition"""
-    
+
     type_defs = """
     type Task {
         id: ID!
@@ -16,12 +15,12 @@ class GraphQLSchema:
         status: String!
         result: String
     }
-    
+
     type Query {
         tasks: [Task!]!
         task(id: ID!): Task
     }
-    
+
     type Mutation {
         submitTask(name: String!): Task!
     }
@@ -30,16 +29,16 @@ class GraphQLSchema:
 
 class GraphQLResolver:
     """GraphQL resolver"""
-    
-    def resolve_tasks(self) -> List[Dict]:
+
+    def resolve_tasks(self) -> list[dict]:
         from orchestration.graph_monitor import get_monitor
         m = get_monitor()
         return [
             {"id": t.task_id, "name": t.task_name, "status": t.status}
             for t in m.task_metrics.values()
         ]
-    
-    def resolve_task(self, id: str) -> Dict:
+
+    def resolve_task(self, id: str) -> dict:
         from orchestration.graph_monitor import get_monitor
         m = get_monitor()
         if id in m.task_metrics:
@@ -50,15 +49,15 @@ class GraphQLResolver:
 
 class GraphQLServer:
     """GraphQL server stub"""
-    
+
     def __init__(self, port: int = 4000):
         self.port = port
         self.resolver = GraphQLResolver()
-    
-    def execute(self, query: str) -> Dict:
+
+    def execute(self, query: str) -> dict:
         logger.info(f"Executing GraphQL: {query}")
         return {"data": {"tasks": self.resolver.resolve_tasks()}}
-    
+
     def start(self):
         logger.info(f"GraphQL server would start on port {self.port}")
 

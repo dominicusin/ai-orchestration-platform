@@ -5,7 +5,7 @@ import datetime
 
 def now_utc():
     """Now UTC"""
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
 
 
 def today_date():

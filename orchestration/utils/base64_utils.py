@@ -1,10 +1,9 @@
 """Base64 utilities"""
 
 import base64
-from typing import Union
 
 
-def b64_encode(data: Union[str, bytes]) -> str:
+def b64_encode(data: str | bytes) -> str:
     """Encode to base64"""
     if isinstance(data, str):
         data = data.encode()
@@ -16,7 +15,7 @@ def b64_decode(data: str) -> bytes:
     return base64.b64decode(data)
 
 
-def b64_encode_url(data: Union[str, bytes]) -> str:
+def b64_encode_url(data: str | bytes) -> str:
     """URL-safe base64 encode"""
     if isinstance(data, str):
         data = data.encode()

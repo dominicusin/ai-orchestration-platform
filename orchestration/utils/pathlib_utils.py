@@ -1,7 +1,6 @@
 """Pathlib utilities"""
 
 from pathlib import Path
-from typing import List, Optional
 
 
 def path_exists(path: str) -> bool:
@@ -29,11 +28,11 @@ def path_write_text(path: str, content: str, encoding: str = "utf-8"):
     Path(path).write_text(content, encoding=encoding)
 
 
-def path_glob(pattern: str, root: str = ".") -> List[Path]:
+def path_glob(pattern: str, root: str = ".") -> list[Path]:
     """Glob pattern"""
     return list(Path(root).glob(pattern))
 
 
-def path_rglob(pattern: str, root: str = ".") -> List[Path]:
+def path_rglob(pattern: str, root: str = ".") -> list[Path]:
     """Recursive glob"""
     return list(Path(root).rglob(pattern))

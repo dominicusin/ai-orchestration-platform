@@ -1,8 +1,9 @@
 """Weakref utilities"""
 
-import weakref
 import functools
-from typing import Any, Callable
+import weakref
+from collections.abc import Callable
+from typing import Any
 
 
 def make_weakref(obj: Any):
@@ -22,10 +23,10 @@ def weak_callback(callback: Callable):
 
 class WeakMethod:
     """Weak method reference"""
-    
+
     def __init__(self, method: Callable):
         self.ref = weakref.Method(method)
-    
+
     def __call__(self):
         return self.ref()
 
@@ -33,7 +34,7 @@ class WeakMethod:
 def weak_cache(func: Callable) -> Callable:
     """Weak reference cache"""
     cache = weakref.WeakValueDictionary()
-    
+
     @functools.wraps(func)
     def wrapper(*args):
         key = str(args)

@@ -2,15 +2,15 @@
 Кэш для результатов генерации с поддержкой инвалидации и инкрементальной обработки
 """
 
-import json
-import time
 import hashlib
-import threading
+import json
 import logging
-from pathlib import Path
-from typing import Optional, Dict, Any, List
+import threading
+import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("orchestration.cache")
 
@@ -30,7 +30,7 @@ class CacheEntry:
     operation: str
     source_path: str
     timestamp: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -41,7 +41,7 @@ class CacheStats:
     writes: int = 0
     invalidations: int = 0
     errors: int = 0
-    
+
     @property
     def hit_rate(self) -> float:
         total = self.hits + self.misses
@@ -56,9 +56,9 @@ class FileCache:
     - Инвалидация по hash содержимого
     - Инкрементальная обработка (отслеживание обработанных файлов)
     """
-    
+
     def __init__(
-        self, 
+        self,
         cache_dir: Path,
         policy: CachePolicy = CachePolicy.CACHE_FIRST,
         max_memory_entries: int = 1000,
@@ -66,37 +66,37 @@ class FileCache:
         self.cache_dir = cache_dir
         self.policy = policy
         self.max_memory_entries = max_memory_entries
-        
+
         # Создаём директорию
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Thread-safe lock
         self._lock = threading.RLock()
-        
+
         # In-memory кэш
-        self._memory_cache: Dict[str, CacheEntry] = {}
-        
+        self._memory_cache: dict[str, CacheEntry] = {}
+
         # Инкрементальная обработка - отслеживание обработанных файлов
-        self._processed_files: Dict[str, float] = {}  # path -> timestamp
-        
+        self._processed_files: dict[str, float] = {}  # path -> timestamp
+
         # Статистика
         self.stats = CacheStats()
-        
+
         # Загружаем метаданные
         self._load_metadata()
-        
+
         logger.debug(f"Кэш инициализирован: {cache_dir}, policy={policy.value}")
-    
+
     def _get_key(self, source_path: str, operation: str) -> str:
         """Генерация ключа кэша"""
         return hashlib.sha256(
             f"{operation}:{source_path}".encode()
         ).hexdigest()[:16]
-    
+
     def _get_source_hash(self, source_content: str) -> str:
         """Хэш содержимого источника"""
         return hashlib.md5(source_content.encode()).hexdigest()
-    
+
     def _load_metadata(self):
         """Загрузка метаданных кэша"""
         metadata_file = self.cache_dir / "metadata.json"
@@ -108,7 +108,7 @@ class FileCache:
                 logger.debug(f"Загружено {len(self._processed_files)} обработанных файлов")
             except Exception as e:
                 logger.warning(f"Ошибка загрузки метаданных: {e}")
-    
+
     def _save_metadata(self):
         """Сохранение метаданных кэша"""
         metadata_file = self.cache_dir / "metadata.json"
@@ -125,25 +125,25 @@ class FileCache:
             }, indent=2))
         except Exception as e:
             logger.warning(f"Ошибка сохранения метаданных: {e}")
-    
+
     def get(
-        self, 
-        source_path: str, 
-        operation: str, 
+        self,
+        source_path: str,
+        operation: str,
         source_content: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Получение результата из кэша
-        
+
         Returns:
             Кэшированный результат или None если нет в кэше
         """
         if self.policy == CachePolicy.SKIP_CACHE:
             return None
-        
+
         key = self._get_key(source_path, operation)
         source_hash = self._get_source_hash(source_content)
-        
+
         # Проверяем in-memory кэш
         with self._lock:
             if key in self._memory_cache:
@@ -152,7 +152,7 @@ class FileCache:
                     self.stats.hits += 1
                     logger.debug(f"Кэш hit (memory): {source_path}:{operation}")
                     return entry.result
-        
+
         # Проверяем file-based кэш
         cache_file = self.cache_dir / f"{key}.json"
         if cache_file.exists():
@@ -170,7 +170,7 @@ class FileCache:
                         )
                         self._memory_cache[key] = entry
                         self._evict_if_needed()
-                    
+
                     self.stats.hits += 1
                     logger.debug(f"Кэш hit (file): {source_path}:{operation}")
                     return data["result"]
@@ -180,23 +180,23 @@ class FileCache:
             except Exception as e:
                 logger.warning(f"Ошибка кэша: {e}")
                 self.stats.errors += 1
-        
+
         self.stats.misses += 1
         logger.debug(f"Кэш miss: {source_path}:{operation}")
         return None
-    
+
     def set(
-        self, 
-        source_path: str, 
-        operation: str, 
-        source_content: str, 
+        self,
+        source_path: str,
+        operation: str,
+        source_content: str,
         result: str,
-        metadata: Dict[str, Any] = None,
+        metadata: dict[str, Any] = None,
     ):
         """Сохранение результата в кэш"""
         key = self._get_key(source_path, operation)
         source_hash = self._get_source_hash(source_content)
-        
+
         # Сохраняем в memory
         with self._lock:
             entry = CacheEntry(
@@ -209,7 +209,7 @@ class FileCache:
             )
             self._memory_cache[key] = entry
             self._evict_if_needed()
-        
+
         # Сохраняем в файл
         cache_file = self.cache_dir / f"{key}.json"
         try:
@@ -225,61 +225,61 @@ class FileCache:
         except Exception as e:
             logger.warning(f"Ошибка записи кэша: {e}")
             self.stats.errors += 1
-        
+
         # Отмечаем файл как обработанный
         self.mark_processed(source_path, operation)
-    
+
     def _evict_if_needed(self):
         """Вытеснение старых записей если превышен лимит"""
         if len(self._memory_cache) <= self.max_memory_entries:
             return
-        
+
         # Удаляем самые старые записи
         sorted_entries = sorted(
             self._memory_cache.items(),
             key=lambda x: x[1].timestamp
         )
-        
+
         to_remove = len(self._memory_cache) - self.max_memory_entries + 100
         for key, _ in sorted_entries[:to_remove]:
             del self._memory_cache[key]
-    
+
     def mark_processed(self, source_path: str, operation: str):
         """Отметка файла как обработанного"""
         with self._lock:
             self._processed_files[f"{operation}:{source_path}"] = time.time()
         self._save_metadata()
-    
+
     def is_processed(self, source_path: str, operation: str) -> bool:
         """Проверка обработан ли файл"""
         key = f"{operation}:{source_path}"
         return key in self._processed_files
-    
+
     def get_unprocessed(
-        self, 
-        files: List[str], 
+        self,
+        files: list[str],
         operation: str,
         source_content_getter: callable = None,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Получение списка необработанных файлов
-        
+
         Args:
             files: Список файлов для проверки
             operation: Операция
             source_content_getter: Функция для получения содержимого файла
-            
+
         Returns:
             Список необработанных файлов
         """
         unprocessed = []
-        
+
         for f in files:
             key = f"{operation}:{f}"
             if key not in self._processed_files:
                 unprocessed.append(f)
                 continue
-            
+
             # Если есть getter - проверяем изменился ли файл
             if source_content_getter:
                 try:
@@ -290,9 +290,9 @@ class FileCache:
                             unprocessed.append(f)
                 except Exception:
                     unprocessed.append(f)
-        
+
         return unprocessed
-    
+
     def invalidate(self, source_path: str = None, operation: str = None):
         """Инвалидация кэша"""
         with self._lock:
@@ -300,15 +300,15 @@ class FileCache:
                 key = self._get_key(source_path, operation)
                 if key in self._memory_cache:
                     del self._memory_cache[key]
-                
+
                 cache_file = self.cache_dir / f"{key}.json"
                 if cache_file.exists():
                     cache_file.unlink()
-                
+
                 processed_key = f"{operation}:{source_path}"
                 if processed_key in self._processed_files:
                     del self._processed_files[processed_key]
-                
+
                 self.stats.invalidations += 1
             elif operation:
                 # Инвалидация всех записей для операции
@@ -318,35 +318,35 @@ class FileCache:
                 ]
                 for k in to_remove:
                     del self._memory_cache[k]
-                
+
                 for f in list(self._processed_files.keys()):
                     if f.startswith(f"{operation}:"):
                         del self._processed_files[f]
-                
+
                 self.stats.invalidations += len(to_remove)
             else:
                 # Полная очистка
                 self._memory_cache.clear()
                 self._processed_files.clear()
                 self.stats.invalidations += 1
-        
+
         self._save_metadata()
-    
+
     def clear(self):
         """Очистка всего кэша"""
         with self._lock:
             self._memory_cache.clear()
-        
+
         for f in self.cache_dir.glob("*.json"):
             try:
                 f.unlink()
             except Exception as e:
                 logger.warning(f"Ошибка удаления {f}: {e}")
-        
+
         self._processed_files.clear()
         self._save_metadata()
         logger.info("Кэш очищен")
-    
+
     def get_stats(self) -> dict:
         """Получение статистики кэша"""
         return {
@@ -359,11 +359,11 @@ class FileCache:
             "memory_entries": len(self._memory_cache),
             "processed_files": len(self._processed_files),
         }
-    
+
     def cleanup_old_entries(self, max_age_days: int = 30):
         """Очистка старых записей"""
         cutoff = time.time() - (max_age_days * 86400)
-        
+
         with self._lock:
             # Чистим memory
             to_remove = [
@@ -372,7 +372,7 @@ class FileCache:
             ]
             for k in to_remove:
                 del self._memory_cache[k]
-            
+
             # Чистим processed files
             processed_to_remove = [
                 k for k, v in self._processed_files.items()
@@ -380,7 +380,7 @@ class FileCache:
             ]
             for k in processed_to_remove:
                 del self._processed_files[k]
-        
+
         # Чистим файлы
         for f in self.cache_dir.glob("*.json"):
             try:
@@ -388,5 +388,5 @@ class FileCache:
                     f.unlink()
             except Exception as e:
                 logger.warning(f"Ошибка удаления {f}: {e}")
-        
+
         logger.info(f"Удалено {len(to_remove)} старых записей кэша")

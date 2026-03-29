@@ -1,6 +1,5 @@
 """Error definitions for DAG execution"""
 
-from typing import Optional
 
 
 class DAGError(Exception):
@@ -24,7 +23,7 @@ class AgentNotAvailableError(DAGError):
     """No agent available"""
     def __init__(self, capability: str = None):
         self.capability = capability
-        super().__init__(f"No agent available" + (f" with capability: {capability}" if capability else ""))
+        super().__init__("No agent available" + (f" with capability: {capability}" if capability else ""))
 
 
 class TaskExecutionError(DAGError):

@@ -1,14 +1,14 @@
 """Itertools utilities"""
 
 import itertools
-from typing import List, Iterator, Callable
+from collections.abc import Callable, Iterator
 
 
 def pairwise(iterable: Iterator) -> Iterator:
     """ pairwise from itertools"""
     a, b = itertools.tee(iterable)
     next(b, None)
-    return zip(a, b)
+    return zip(a, b, strict=False)
 
 
 def batched(iterable: Iterator, n: int) -> Iterator:
@@ -21,17 +21,17 @@ def batched(iterable: Iterator, n: int) -> Iterator:
         yield batch
 
 
-def product(*iterables: List) -> Iterator:
+def product(*iterables: list) -> Iterator:
     """Cartesian product"""
     return itertools.product(*iterables)
 
 
-def permutations(items: List, r: int = None) -> Iterator:
+def permutations(items: list, r: int = None) -> Iterator:
     """Permutations"""
     return itertools.permutations(items, r)
 
 
-def combinations(items: List, r: int) -> Iterator:
+def combinations(items: list, r: int) -> Iterator:
     """Combinations"""
     return itertools.combinations(items, r)
 

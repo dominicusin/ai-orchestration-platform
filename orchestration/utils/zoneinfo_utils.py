@@ -1,8 +1,7 @@
 """Zoneinfo utilities"""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
-from typing import Optional
 
 
 def get_timezone(tz_name: str) -> ZoneInfo:
@@ -27,4 +26,4 @@ def is_dst(dt: datetime) -> bool:
 
 def utc_now() -> datetime:
     """Get current UTC time"""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

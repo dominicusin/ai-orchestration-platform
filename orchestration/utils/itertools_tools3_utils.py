@@ -1,7 +1,7 @@
 """Itertools tools3 utilities"""
 
 import itertools
-from typing import List, Iterator
+from collections.abc import Iterator
 
 
 def pairwise_iter(iterable: Iterator) -> Iterator:

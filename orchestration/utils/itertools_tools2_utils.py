@@ -1,7 +1,7 @@
 """Itertools tools2 utilities"""
 
 import itertools
-from typing import List, Iterator, Callable
+from collections.abc import Iterator
 
 
 def islice_iter(iterable: Iterator, stop: int) -> Iterator:
@@ -9,7 +9,7 @@ def islice_iter(iterable: Iterator, stop: int) -> Iterator:
     return itertools.islice(iterable, stop)
 
 
-def take_n(iterable: Iterator, n: int) -> List:
+def take_n(iterable: Iterator, n: int) -> list:
     """Take n items"""
     return list(itertools.islice(iterable, n))
 

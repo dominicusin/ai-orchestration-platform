@@ -1,6 +1,5 @@
 """Itertools tools26 utilities"""
 
-import itertools
 
 
 def next_2(iterator, default=None):

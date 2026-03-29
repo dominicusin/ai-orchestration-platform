@@ -1,7 +1,7 @@
 """Circuit breaker implementation"""
 
-import time
 import logging
+import time
 from enum import Enum
 
 logger = logging.getLogger("orchestration.circuit_breaker")
@@ -20,7 +20,7 @@ class CircuitBreakerOpenError(Exception):
 
 class CircuitBreaker:
     """Circuit breaker pattern"""
-    
+
     def __init__(
         self,
         name: str = "default",
@@ -32,11 +32,11 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
-        
+
         self.failure_count = 0
         self.last_failure_time = 0
         self.state = CircuitState.CLOSED
-    
+
     def call(self, func, *args, **kwargs):
         """Execute with circuit breaker"""
         if self.state == CircuitState.OPEN:
@@ -44,24 +44,24 @@ class CircuitBreaker:
                 self.state = CircuitState.HALF_OPEN
             else:
                 raise Exception("Circuit breaker OPEN")
-        
+
         try:
             result = func(*args, **kwargs)
             self._on_success()
             return result
-        except self.expected_exception as e:
+        except self.expected_exception:
             self._on_failure()
             raise
-    
+
     def _on_success(self):
         self.failure_count = 0
         if self.state == CircuitState.HALF_OPEN:
             self.state = CircuitState.CLOSED
-    
+
     def _on_failure(self):
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
+
         if self.failure_count >= self.failure_threshold:
             self.state = CircuitState.OPEN
             logger.warning("Circuit breaker OPENED")

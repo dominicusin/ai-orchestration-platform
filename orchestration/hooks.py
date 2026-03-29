@@ -1,14 +1,15 @@
 """Hooks for DAG execution lifecycle"""
 
 import logging
-from typing import Callable, Any, List, Dict
+from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
+from typing import Any
 
 logger = logging.getLogger("orchestration.hooks")
 
 
-class HookEvent(str, Enum):
+class HookEvent(StrEnum):
     """Hook events"""
     TASK_STARTED = "task_started"
     TASK_COMPLETED = "task_completed"
@@ -24,8 +25,8 @@ class HookContext:
     """Hook execution context"""
     event: HookEvent
     data: Any
-    metadata: Dict = None
-    
+    metadata: dict = None
+
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
@@ -33,11 +34,11 @@ class HookContext:
 
 class Hook:
     """Base hook"""
-    
+
     def __init__(self, event: HookEvent, handler: Callable):
         self.event = event
         self.handler = handler
-    
+
     def execute(self, context: HookContext):
         """Execute hook"""
         try:
@@ -48,28 +49,28 @@ class Hook:
 
 class HookManager:
     """Manage execution hooks"""
-    
+
     def __init__(self):
-        self.hooks: Dict[HookEvent, List[Hook]] = {
+        self.hooks: dict[HookEvent, list[Hook]] = {
             event: [] for event in HookEvent
         }
-    
+
     def register(self, hook: Hook):
         """Register hook"""
         self.hooks[hook.event].append(hook)
         logger.info(f"Registered hook: {hook.event}")
-    
+
     def on(self, event: HookEvent) -> Callable:
         """Decorator to register hook"""
         def decorator(handler: Callable) -> Callable:
             self.register(Hook(event, handler))
             return handler
         return decorator
-    
-    def trigger(self, event: HookEvent, data: Any = None, metadata: Dict = None):
+
+    def trigger(self, event: HookEvent, data: Any = None, metadata: dict = None):
         """Trigger all hooks for event"""
         context = HookContext(event, data, metadata)
-        
+
         for hook in self.hooks[event]:
             hook.execute(context)
 

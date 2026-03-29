@@ -1,9 +1,9 @@
 """Typing utilities"""
 
-from typing import get_type_hints, get_origin, get_args, Union, Optional, List, Dict, Any
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 
-def get_type_hints_func(func) -> Dict:
+def get_type_hints_func(func) -> dict:
     """Get type hints"""
     return get_type_hints(func)
 

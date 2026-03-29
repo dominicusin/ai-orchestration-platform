@@ -1,9 +1,9 @@
 """Collection utilities"""
 
-from typing import List, Dict, Any, Callable
+from typing import Any
 
 
-def group_by(items: List[Dict], key: str) -> Dict[Any, List[Dict]]:
+def group_by(items: list[dict], key: str) -> dict[Any, list[dict]]:
     """Group items by key"""
     result = {}
     for item in items:
@@ -14,7 +14,7 @@ def group_by(items: List[Dict], key: str) -> Dict[Any, List[Dict]]:
     return result
 
 
-def unique(items: List) -> List:
+def unique(items: list) -> list:
     """Get unique items preserving order"""
     seen = set()
     result = []
@@ -25,12 +25,12 @@ def unique(items: List) -> List:
     return result
 
 
-def sort_by(items: List[Dict], key: str, reverse: bool = False) -> List[Dict]:
+def sort_by(items: list[dict], key: str, reverse: bool = False) -> list[dict]:
     """Sort items by key"""
     return sorted(items, key=lambda x: x.get(key), reverse=reverse)
 
 
-def filter_by(items: List[Dict], **kwargs) -> List[Dict]:
+def filter_by(items: list[dict], **kwargs) -> list[dict]:
     """Filter items by key-value pairs"""
     result = []
     for item in items:
@@ -39,7 +39,7 @@ def filter_by(items: List[Dict], **kwargs) -> List[Dict]:
     return result
 
 
-def find(items: List[Dict], **kwargs) -> Dict:
+def find(items: list[dict], **kwargs) -> dict:
     """Find first matching item"""
     for item in items:
         if all(item.get(k) == v for k, v in kwargs.items()):

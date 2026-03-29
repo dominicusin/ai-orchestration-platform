@@ -1,7 +1,7 @@
 """JSON utilities extended"""
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 
 def to_json_pretty(data: Any) -> str:
@@ -19,7 +19,7 @@ def json_encoder_default(obj: Any) -> Any:
     return json.JSONEncoder().default(obj)
 
 
-def json_decoder_object(pairs: list) -> Dict:
+def json_decoder_object(pairs: list) -> dict:
     """Custom JSON object decoder"""
     return dict(pairs)
 
@@ -28,5 +28,5 @@ def safe_json_parse(text: str, default: Any = None) -> Any:
     """Safe JSON parse"""
     try:
         return json.loads(text)
-    except:
+    except Exception:
         return default

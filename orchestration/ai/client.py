@@ -3,12 +3,11 @@ Async AI клиент с множественными провайдерами �
 Заменяет ThreadPoolExecutor на asyncio для меньших накладных расходов.
 """
 
-import os
 import asyncio
 import logging
-import time
+import os
 import random
-from typing import Optional, List, Dict
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -40,16 +39,16 @@ class AIConfig:
     gemini_model: str = "gemini-2.0-flash"
     ollama_model: str = "deepseek-coder:6.7b"
     huggingface_model: str = "meta-llama/Llama-3.3-70B-Instruct"
-    
+
     # Параметры
     max_tokens: int = 8192
     temperature: float = 0.05
     max_retries: int = 3
     retry_base_delay: float = 1.0
     max_total_delay: float = 60.0
-    
+
     # Rate limits per provider
-    rate_limits: Dict[str, int] = field(default_factory=lambda: {
+    rate_limits: dict[str, int] = field(default_factory=lambda: {
         "groq": 30,      # requests/min
         "cerebras": 60,
         "hyperbolic": 30,
@@ -57,9 +56,9 @@ class AIConfig:
         "ollama": 999,   # local, no limit
         "huggingface": 30,
     })
-    
+
     # Circuit breaker config per provider
-    circuit_breaker_config: Dict[str, Dict] = field(default_factory=lambda: {
+    circuit_breaker_config: dict[str, dict] = field(default_factory=lambda: {
         "groq": {"failure_threshold": 5, "timeout": 30.0},
         "cerebras": {"failure_threshold": 5, "timeout": 30.0},
         "hyperbolic": {"failure_threshold": 5, "timeout": 30.0},
@@ -67,7 +66,7 @@ class AIConfig:
         "ollama": {"failure_threshold": 10, "timeout": 10.0},
         "huggingface": {"failure_threshold": 5, "timeout": 30.0},
     })
-    
+
     @classmethod
     def from_env(cls) -> "AIConfig":
         return cls(
@@ -98,7 +97,7 @@ class ProviderMetrics:
     total_tokens: int = 0
     total_cost: float = 0.0
     total_latency: float = 0.0
-    
+
     COST_PER_MILLION = {
         "groq": 0.59,
         "cerebras": 0.60,
@@ -116,8 +115,8 @@ class AIClientMetrics:
     errors: int = 0
     total_tokens: int = 0
     total_cost: float = 0.0
-    providers: Dict[str, ProviderMetrics] = field(default_factory=dict)
-    
+    providers: dict[str, ProviderMetrics] = field(default_factory=dict)
+
     def get_provider(self, name: str) -> ProviderMetrics:
         if name not in self.providers:
             self.providers[name] = ProviderMetrics()
@@ -137,22 +136,22 @@ class AsyncAIClient:
     - Exponential backoff с jitter
     - Graceful degradation
     """
-    
+
     def __init__(self, config: AIConfig = None):
         self.config = config or AIConfig.from_env()
         self.metrics = AIClientMetrics()
-        
+
         # Circuit breakers для каждого провайдера
-        self._breakers: Dict[str, CircuitBreaker] = {}
+        self._breakers: dict[str, CircuitBreaker] = {}
         self._init_circuit_breakers()
-        
+
         # Rate limiting
-        self._rate_limiters: Dict[str, asyncio.Semaphore] = {}
-        self._rate_limit_last_reset: Dict[str, float] = {}
-        
+        self._rate_limiters: dict[str, asyncio.Semaphore] = {}
+        self._rate_limit_last_reset: dict[str, float] = {}
+
         # HTTP session
-        self._session: Optional[aiohttp.ClientSession] = None
-        
+        self._session: aiohttp.ClientSession | None = None
+
         # Clients
         self._groq = None
         self._gemini = None
@@ -160,9 +159,9 @@ class AsyncAIClient:
         self._hyperbolic = None
         self._huggingface = None
         self._ollama = None
-        
+
         self._init_clients()
-    
+
     def _init_circuit_breakers(self):
         """Инициализация Circuit Breakers"""
         for provider, cb_config in self.config.circuit_breaker_config.items():
@@ -172,11 +171,11 @@ class AsyncAIClient:
                 timeout=cb_config.get("timeout", 30.0),
             )
             logger.debug(f"Circuit breaker for {provider}: {cb_config}")
-    
+
     def _init_clients(self):
         """Инициализация AI провайдеров"""
         logger.info("🔌 Инициализация AI провайдеров:")
-        
+
         # Groq
         try:
             from groq import Groq
@@ -188,7 +187,7 @@ class AsyncAIClient:
             logger.warning("   ❌ Groq: библиотека не установлена")
         except Exception as e:
             logger.warning(f"   ❌ Groq: {e}")
-        
+
         # Gemini
         try:
             from google import genai
@@ -202,7 +201,7 @@ class AsyncAIClient:
             logger.warning("   ❌ Gemini: библиотека не установлена")
         except Exception as e:
             logger.warning(f"   ❌ Gemini: {e}")
-        
+
         # Cerebras
         try:
             key = os.getenv("CEREBRAS_API_KEY")
@@ -214,19 +213,19 @@ class AsyncAIClient:
             logger.warning("   ❌ Cerebras: библиотека не установлена")
         except Exception as e:
             logger.warning(f"   ❌ Cerebras: {e}")
-        
+
         # Hyperbolic
         key = os.getenv("HYPERBOLIC_API_KEY")
         if key:
             self._hyperbolic = {"api_key": key}
             logger.info("   ✅ Hyperbolic")
-        
+
         # HuggingFace
         key = os.getenv("HF_TOKEN")
         if key:
             self._huggingface = {"token": key}
             logger.info("   ✅ HuggingFace")
-        
+
         # Ollama - проверка сразу при инициализации
         try:
             url = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -240,7 +239,7 @@ class AsyncAIClient:
         except Exception as e:
             self._ollama = None
             logger.warning(f"   ⚠️ Ollama: недоступен - {e}")
-    
+
     async def _check_ollama(self):
         """Асинхронная проверка Ollama"""
         try:
@@ -254,25 +253,25 @@ class AsyncAIClient:
                         logger.info(f"   ✅ Ollama ({len(models)} моделей)")
         except Exception as e:
             logger.warning(f"   ⚠️ Ollama: недоступен - {e}")
-    
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Получение или создание HTTP сессии"""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
-    
-    def _get_providers(self, task_type: str) -> List[str]:
+
+    def _get_providers(self, task_type: str) -> list[str]:
         """Получение списка провайдеров для задачи"""
         # Ollama первым - локальный и бесплатный
         providers = []
         if self._ollama:
             providers.append("ollama")
-        
+
         # Универсальные провайдеры из .env
         default_provider = os.getenv("DEFAULT_PROVIDER", "").lower()
         if default_provider and default_provider != "ollama":
             providers.append(default_provider)
-        
+
         if task_type in ("sql",):
             providers.extend(["groq", "cerebras", "hyperbolic", "gemini", "deepseek", "cohere"])
         elif task_type in ("haskell", "qml"):
@@ -281,40 +280,40 @@ class AsyncAIClient:
             providers.extend(["gemini", "cerebras", "groq", "deepseek", "anthropic"])
         else:
             providers.extend(["cerebras", "groq", "gemini", "deepseek", "mistral"])
-        
+
         return providers
-    
+
     def _exponential_backoff(self, attempt: int, base_delay: float = None) -> float:
         """Exponential backoff с jitter и max delay"""
         if base_delay is None:
             base_delay = self.config.retry_base_delay
-        
+
         delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
         return min(delay, self.config.max_total_delay)
-    
+
     async def _check_rate_limit(self, provider: str) -> bool:
         """Проверка rate limit для провайдера"""
         now = time.time()
         limit = self.config.rate_limits.get(provider, 30)
-        
+
         # Сброс счётчика каждую минуту
         if now - self._rate_limit_last_reset.get(provider, 0) > 60:
             self._rate_limit_last_reset[provider] = now
             self._rate_limiters[provider] = asyncio.Semaphore(limit)
-        
+
         if provider not in self._rate_limiters:
             self._rate_limiters[provider] = asyncio.Semaphore(limit)
-        
+
         # Non-blocking acquire
         if self._rate_limiters[provider].locked():
             logger.warning(f"Rate limit reached for {provider}")
             return False
         return True
-    
+
     async def call(
-        self, 
-        prompt: str, 
-        model: str = "auto", 
+        self,
+        prompt: str,
+        model: str = "auto",
         max_tokens: int = None,
         timeout: float = 120.0
     ) -> str:
@@ -323,28 +322,28 @@ class AsyncAIClient:
         """
         if max_tokens is None:
             max_tokens = self.config.max_tokens
-        
+
         providers = self._get_providers(model)
         last_error = None
         total_delay = 0.0
-        
+
         for provider in providers:
             # Проверка Circuit Breaker
             breaker = self._breakers.get(provider)
             if breaker and not breaker.is_available:
                 logger.debug(f"Circuit breaker OPEN for {provider}, skipping")
                 continue
-            
+
             # Rate limit check
             if not await self._check_rate_limit(provider):
                 await asyncio.sleep(1)
                 continue
-            
+
             for attempt in range(self.config.max_retries):
                 if total_delay >= self.config.max_total_delay:
                     logger.warning("Max total delay reached, stopping retries")
                     break
-                
+
                 try:
                     result = await self._call_provider(provider, prompt, max_tokens, timeout)
                     if result:
@@ -356,7 +355,7 @@ class AsyncAIClient:
                 except Exception as e:
                     last_error = e
                     error_str = str(e).lower()
-                    
+
                     if "429" in error_str or "rate_limit" in error_str:
                         self.metrics.get_provider(provider).rate_limits += 1
                         logger.warning(f"Rate limit {provider}, attempt {attempt + 1}")
@@ -372,21 +371,21 @@ class AsyncAIClient:
                         # Другая ошибка - пробуем следующий провайдер
                         logger.debug(f"{provider}: {str(e)[:60]}")
                         break
-        
+
         logger.error(f"All providers failed: {last_error}")
         return ""
-    
+
     async def _call_provider(
-        self, 
-        provider: str, 
-        prompt: str, 
+        self,
+        provider: str,
+        prompt: str,
         max_tokens: int,
         timeout: float
     ) -> str:
         """Вызов конкретного провайдера"""
         start_time = time.time()
         breaker = self._breakers.get(provider)
-        
+
         try:
             if provider == "groq" and self._groq:
                 await asyncio.sleep(0.5)
@@ -401,7 +400,7 @@ class AsyncAIClient:
                 if breaker:
                     breaker.record_success()
                 return resp.choices[0].message.content or ""
-            
+
             if provider == "cerebras" and self._cerebras:
                 await asyncio.sleep(0.3)
                 resp = self._cerebras.chat.completions.create(
@@ -414,7 +413,7 @@ class AsyncAIClient:
                 if breaker:
                     breaker.record_success()
                 return resp.choices[0].message.content or ""
-            
+
             if provider == "hyperbolic" and self._hyperbolic:
                 await asyncio.sleep(0.3)
                 session = await self._get_session()
@@ -435,7 +434,7 @@ class AsyncAIClient:
                     if breaker:
                         breaker.record_success()
                     return data["choices"][0]["message"]["content"]
-            
+
             if provider == "gemini" and self._gemini:
                 await asyncio.sleep(1)
                 resp = self._gemini.models.generate_content(
@@ -450,11 +449,11 @@ class AsyncAIClient:
                 if breaker:
                     breaker.record_success()
                 return resp.text or ""
-            
+
             if provider == "ollama":
                 if not self._ollama:
                     raise Exception("Ollama not available")
-                
+
                 session = await self._get_session()
                 resp = await session.post(
                     f"{self._ollama['url']}/api/generate",
@@ -472,7 +471,7 @@ class AsyncAIClient:
                     if breaker:
                         breaker.record_success()
                     return data.get("response", "")
-            
+
             if provider == "huggingface" and self._huggingface:
                 session = await self._get_session()
                 resp = await session.post(
@@ -487,7 +486,7 @@ class AsyncAIClient:
                     if breaker:
                         breaker.record_success()
                     return data[0]["generated_text"]
-            
+
             # Универсальный провайдер (DeepSeek, Mistral, Cohere, и др.)
             from .providers import OPENAI_COMPATIBLE_PROVIDERS
             if provider in OPENAI_COMPATIBLE_PROVIDERS:
@@ -512,49 +511,49 @@ class AsyncAIClient:
                         if breaker:
                             breaker.record_success()
                         return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            
+
             raise Exception(f"Provider {provider} not available")
-            
+
         except Exception as e:
             if breaker:
                 breaker.record_failure(str(e))
             raise
-    
+
     def _record_call(self, provider: str, tokens: int, latency: float):
         """Запись метрик вызова"""
         pm = self.metrics.get_provider(provider)
         pm.calls += 1
         pm.total_tokens += tokens
         pm.total_latency += latency
-        
+
         cost = (tokens / 1_000_000) * pm.COST_PER_MILLION.get(provider, 0)
         pm.total_cost += cost
-        
+
         self.metrics.calls += 1
         self.metrics.total_tokens += tokens
         self.metrics.total_cost += cost
-    
+
     async def call_batch(
-        self, 
-        prompts: List[Dict], 
+        self,
+        prompts: list[dict],
         model: str = "auto",
         max_concurrent: int = 4
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Параллельная обработка нескольких промптов"""
         semaphore = asyncio.Semaphore(max_concurrent)
-        
+
         async def worker(idx: int, prompt: str, op: str) -> tuple:
             async with semaphore:
                 result = await self.call(prompt, model)
                 return idx, op, result
-        
+
         tasks = [
             worker(idx, p.get("prompt", ""), p.get("operation", "default"))
             for idx, p in enumerate(prompts)
         ]
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         output = [None] * len(prompts)
         for r in results:
             if isinstance(r, Exception):
@@ -562,9 +561,9 @@ class AsyncAIClient:
                 continue
             idx, op, result = r
             output[idx] = {"operation": op, "result": result}
-        
+
         return output
-    
+
     def get_status(self) -> dict:
         """Получение статуса всех провайдеров"""
         return {
@@ -584,12 +583,8 @@ class AsyncAIClient:
                     for name, pm in self.metrics.providers.items()
                 }
             },
-            "circuit_breakers": {
-                name: breaker.get_status()
-                for name, breaker in self._breakers.items()
-            }
         }
-    
+
     async def close(self):
         """Закрытие сессии"""
         if self._session and not self._session.closed:

@@ -1,7 +1,7 @@
 """Dis utilities"""
 
 import dis
-from typing import Callable
+from collections.abc import Callable
 
 
 def disassemble(func: Callable) -> str:

@@ -1,42 +1,41 @@
 """Pipeline configuration sources"""
 
 import logging
-from typing import Dict, Any, List
 
 logger = logging.getLogger("orchestration.config_sources")
 
 
 class ConfigSource:
     """Base config source"""
-    
-    def load(self) -> Dict:
+
+    def load(self) -> dict:
         raise NotImplementedError
 
 
 class DictSource(ConfigSource):
     """Dictionary config source"""
-    
-    def __init__(self, config: Dict):
+
+    def __init__(self, config: dict):
         self.config = config
-    
-    def load(self) -> Dict:
+
+    def load(self) -> dict:
         return self.config
 
 
 class MultiSource(ConfigSource):
     """Multiple config sources"""
-    
-    def __init__(self, sources: List[ConfigSource]):
+
+    def __init__(self, sources: list[ConfigSource]):
         self.sources = sources
-    
-    def load(self) -> Dict:
+
+    def load(self) -> dict:
         result = {}
         for source in self.sources:
             result.update(source.load())
         return result
 
 
-def merge_configs(*configs: Dict) -> Dict:
+def merge_configs(*configs: dict) -> dict:
     """Merge multiple configs"""
     result = {}
     for config in configs:

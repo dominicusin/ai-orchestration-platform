@@ -1,15 +1,14 @@
 """URLlib utilities"""
 
 import urllib.parse
-from typing import Dict, Any
 
 
-def url_encode(params: Dict) -> str:
+def url_encode(params: dict) -> str:
     """URL encode parameters"""
     return urllib.parse.urlencode(params)
 
 
-def url_decode(query: str) -> Dict:
+def url_decode(query: str) -> dict:
     """URL decode query"""
     return dict(urllib.parse.parse_qsl(query))
 

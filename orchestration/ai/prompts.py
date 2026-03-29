@@ -1,6 +1,5 @@
 """Prompt templates for AI"""
 
-from typing import Dict, List
 
 
 TEMPLATES = {
@@ -17,6 +16,6 @@ def get_template(name: str, **kwargs) -> str:
     return template.format(**kwargs)
 
 
-def list_templates() -> List[str]:
+def list_templates() -> list[str]:
     """List all templates"""
     return list(TEMPLATES.keys())

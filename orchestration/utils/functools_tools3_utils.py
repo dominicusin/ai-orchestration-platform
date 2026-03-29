@@ -1,7 +1,7 @@
 """Functools tools3 utilities"""
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 
 def cached_property_func(func: Callable) -> property:

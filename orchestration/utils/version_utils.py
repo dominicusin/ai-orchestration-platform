@@ -1,10 +1,9 @@
 """Version utilities"""
 
 import re
-from typing import Tuple
 
 
-def parse_version(version: str) -> Tuple[int, ...]:
+def parse_version(version: str) -> tuple[int, ...]:
     """Parse version string to tuple"""
     return tuple(int(x) for x in re.findall(r'\d+', version))
 

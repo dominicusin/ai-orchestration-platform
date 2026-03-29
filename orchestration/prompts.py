@@ -1,6 +1,5 @@
 """Prompts for LLM interactions"""
 
-from typing import Dict, List
 
 
 SYSTEM_PROMPT = """You are a DAG execution assistant.
@@ -63,6 +62,6 @@ def get_prompt(name: str, **kwargs) -> str:
         "aggregation": RESULT_AGGREGATION_PROMPT,
         "error": ERROR_HANDLING_PROMPT,
     }
-    
+
     template = prompts.get(name, "")
     return template.format(**kwargs)

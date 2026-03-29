@@ -1,12 +1,11 @@
 """System utilities"""
 
 import os
-import sys
 import platform
-from typing import Dict
+import sys
 
 
-def get_system_info() -> Dict:
+def get_system_info() -> dict:
     """Get system information"""
     return {
         "platform": platform.system(),
@@ -38,7 +37,7 @@ def get_cpu_count() -> int:
     return os.cpu_count() or 1
 
 
-def get_memory_info() -> Dict:
+def get_memory_info() -> dict:
     """Get memory info"""
     import psutil
     return {

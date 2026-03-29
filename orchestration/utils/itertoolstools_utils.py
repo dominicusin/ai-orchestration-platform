@@ -1,15 +1,15 @@
 """Itertools tools utilities"""
 
 import itertools
-from typing import Iterator, List, Callable
+from collections.abc import Callable, Iterator
 
 
-def combinations_with_replacement(iterable: List, r: int) -> Iterator:
+def combinations_with_replacement(iterable: list, r: int) -> Iterator:
     """Combinations with replacement"""
     return itertools.combinations_with_replacement(iterable, r)
 
 
-def permutations_with_r(iterable: List, r: int) -> Iterator:
+def permutations_with_r(iterable: list, r: int) -> Iterator:
     """Permutations with r"""
     return itertools.permutations(iterable, r)
 

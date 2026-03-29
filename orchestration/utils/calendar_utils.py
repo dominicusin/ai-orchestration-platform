@@ -1,7 +1,6 @@
 """Calendar utilities"""
 
 import calendar
-from datetime import datetime
 
 
 def get_month_days(year: int, month: int) -> int:

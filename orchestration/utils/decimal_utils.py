@@ -1,10 +1,9 @@
 """Decimal utilities"""
 
-from decimal import Decimal, ROUND_HALF_UP, ROUND_DOWN, ROUND_UP
-from typing import Union
+from decimal import ROUND_HALF_UP, Decimal
 
 
-def dec(value: Union[str, int, float]) -> Decimal:
+def dec(value: str | int | float) -> Decimal:
     """Create decimal"""
     return Decimal(str(value))
 

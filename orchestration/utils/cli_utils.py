@@ -1,7 +1,6 @@
 """CLI utilities"""
 
 import sys
-from typing import Optional
 
 
 def print_error(message: str):

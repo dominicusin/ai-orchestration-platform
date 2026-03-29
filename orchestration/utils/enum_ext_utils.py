@@ -1,10 +1,10 @@
 """Enum extended utilities"""
 
 import enum
-from typing import List, Any
+from typing import Any
 
 
-def enum_to_list(e: enum.Enum) -> List[Any]:
+def enum_to_list(e: enum.Enum) -> list[Any]:
     """Convert enum to list"""
     return [member.value for member in e]
 
@@ -29,6 +29,6 @@ def auto_enum():
     return enum.auto
 
 
-def enum_iter(e: enum.Enum) -> List[enum.Enum]:
+def enum_iter(e: enum.Enum) -> list[enum.Enum]:
     """Iterate enum members"""
     return list(e)

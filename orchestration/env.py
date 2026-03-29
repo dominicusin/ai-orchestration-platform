@@ -1,7 +1,7 @@
 """Environment utilities"""
 
 import os
-from typing import Any, Dict
+from typing import Any
 
 
 def getenv(key: str, default: Any = None) -> Any:
@@ -36,7 +36,7 @@ def get_list(key: str, separator: str = ",", default: list = None) -> list:
     return [v.strip() for v in value.split(separator)]
 
 
-def to_dict(prefix: str) -> Dict[str, str]:
+def to_dict(prefix: str) -> dict[str, str]:
     """Get all env vars with prefix"""
     return {
         key[len(prefix):]: value

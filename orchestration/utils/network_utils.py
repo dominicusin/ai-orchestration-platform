@@ -1,7 +1,6 @@
 """Network utilities"""
 
 import socket
-from typing import Optional
 
 
 def get_local_ip() -> str:
@@ -12,7 +11,7 @@ def get_local_ip() -> str:
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except:
+    except Exception:
         return "127.0.0.1"
 
 
@@ -24,7 +23,7 @@ def is_port_open(host: str, port: int) -> bool:
         result = sock.connect_ex((host, port))
         sock.close()
         return result == 0
-    except:
+    except Exception:
         return False
 
 

@@ -1,15 +1,15 @@
 """Collections utilities"""
 
 import collections
-from typing import List, Dict, Any, Counter
+from collections import Counter
 
 
-def counter(items: List) -> Counter:
+def counter(items: list) -> Counter:
     """Count items"""
     return collections.Counter(items)
 
 
-def counter_most(counter: Counter, n: int = 10) -> List:
+def counter_most(counter: Counter, n: int = 10) -> list:
     """Get most common items"""
     return counter.most_common(n)
 
@@ -29,6 +29,6 @@ def ordered_dict():
     return collections.OrderedDict()
 
 
-def namedtuple_factory(name: str, fields: List[str]):
+def namedtuple_factory(name: str, fields: list[str]):
     """Create namedtuple"""
     return collections.namedtuple(name, fields)

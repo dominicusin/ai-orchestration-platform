@@ -2,25 +2,24 @@
 
 import json
 import logging
-from typing import Dict, Any
 
 logger = logging.getLogger("orchestration.metrics_exporters")
 
 
 class MetricsExporter:
     """Base metrics exporter"""
-    
-    def export(self, metrics: Dict):
+
+    def export(self, metrics: dict):
         raise NotImplementedError
 
 
 class JSONExporter(MetricsExporter):
     """Export to JSON"""
-    
+
     def __init__(self, path: str = None):
         self.path = path
-    
-    def export(self, metrics: Dict):
+
+    def export(self, metrics: dict):
         data = json.dumps(metrics, indent=2)
         if self.path:
             open(self.path, "w").write(data)
@@ -29,8 +28,8 @@ class JSONExporter(MetricsExporter):
 
 class PrometheusExporter(MetricsExporter):
     """Export to Prometheus format"""
-    
-    def export(self, metrics: Dict):
+
+    def export(self, metrics: dict):
         lines = []
         for key, value in metrics.items():
             if isinstance(value, (int, float)):
@@ -40,7 +39,7 @@ class PrometheusExporter(MetricsExporter):
 
 class ExporterFactory:
     """Create exporters"""
-    
+
     @staticmethod
     def create(format: str, **kwargs) -> MetricsExporter:
         if format == "json":

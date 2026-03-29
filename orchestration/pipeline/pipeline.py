@@ -3,27 +3,26 @@
 Модульная архитектура с async AI, circuit breaker, и мониторингом.
 """
 
+import asyncio
+import json
+import logging
 import os
 import re
-import json
-import time
-import sys
-import asyncio
 import signal
-import logging
+import sys
+import time
 from pathlib import Path
-from typing import List
 
 # Модули проекта
-from ..ai.client import AsyncAIClient, AIConfig
-from ..cache.cache import FileCache, CachePolicy
+from ..ai.client import AIConfig, AsyncAIClient
+from ..cache.cache import CachePolicy, FileCache
+from ..monitoring.metrics import create_metrics, create_tracer
+from ..utils.logging_utils import LogFormat, setup_logging
 from ..validators.validators import (
     get_haskell_validator,
-    get_sql_validator,
     get_qml_validator,
+    get_sql_validator,
 )
-from ..monitoring.metrics import create_metrics, create_tracer
-from ..utils.logging_utils import setup_logging, LogFormat
 
 logger = logging.getLogger("orchestration.pipeline")
 
@@ -36,20 +35,20 @@ CONFIG = {
     "max_workers": int(os.getenv("MAX_WORKERS", "4")),
     "max_retries": int(os.getenv("MAX_RETRIES", "3")),
     "batch_size": int(os.getenv("BATCH_SIZE", "5")),
-    
+
     # Валидация
     "validate_with_ghc": os.getenv("VALIDATE_WITH_GHC", "true").lower() == "true",
     "use_hlint": os.getenv("USE_HLINT", "true").lower() == "true",
     "use_pgformat": os.getenv("USE_PGFORMAT", "true").lower() == "true",
-    
+
     # Кэш
     "cache_policy": os.getenv("CACHE_POLICY", "cache_first"),
     "max_memory_cache": int(os.getenv("MAX_MEMORY_CACHE", "1000")),
-    
+
     # Мониторинг
     "enable_prometheus": os.getenv("ENABLE_PROMETHEUS", "true").lower() == "true",
     "prometheus_port": int(os.getenv("PROMETHEUS_PORT", "9090")),
-    
+
     # Логирование
     "log_level": os.getenv("LOG_LEVEL", "INFO"),
     "log_file": os.getenv("LOG_FILE", "pipeline.log"),
@@ -107,7 +106,7 @@ SQL:""",
 
 МАППИНГ:
 - QPushButton → Button from QtQuick.Controls
-- QLineEdit → TextField from QtQuick.Controls  
+- QLineEdit → TextField from QtQuick.Controls
 - QLabel → Text from QtQuick
 - QCheckBox → CheckBox from QtQuick.Controls
 - QRadioButton → RadioButton from QtQuick.Controls
@@ -186,7 +185,7 @@ CREATE TABLE IF NOT EXISTS {table_name} (
 class ConversionPipeline:
     """
     Многофазный конвейер конвертации v4
-    
+
     Особенности:
     - Async AI клиент с circuit breaker
     - Инкрементальная обработка
@@ -207,7 +206,7 @@ class ConversionPipeline:
         self.output_path.mkdir(parents=True, exist_ok=True)
 
         self.max_workers = max_workers or CONFIG["max_workers"]
-        
+
         # Логирование
         format_type = LogFormat.JSON if (log_format or CONFIG["log_format"]) == "json" else LogFormat.TEXT
         self._logger = setup_logging(
@@ -217,10 +216,10 @@ class ConversionPipeline:
             format_type=format_type,
             context={"project": str(project_path)},
         )
-        
+
         # AI клиент (async)
         self.ai = AsyncAIClient(AIConfig.from_env())
-        
+
         # RLM для длинных контекстов (опционально)
         self.rlm = None
         if os.getenv("ENABLE_RLM", "false").lower() == "true":
@@ -228,7 +227,7 @@ class ConversionPipeline:
             self.rlm = RLMWrapper(self.ai)
             if not self.rlm.initialize():
                 self.rlm = None
-        
+
         # Кэш
         cache_policy = CachePolicy[CONFIG["cache_policy"].upper().replace("_", "_")]
         self.cache = FileCache(
@@ -236,24 +235,24 @@ class ConversionPipeline:
             policy=cache_policy,
             max_memory_entries=CONFIG["max_memory_cache"],
         )
-        
+
         # Валидаторы
         self.haskell_validator = get_haskell_validator()
         self.sql_validator = get_sql_validator()
         self.qml_validator = get_qml_validator()
-        
+
         # Метрики и tracing
         self.metrics = create_metrics(CONFIG["enable_prometheus"])
         self.tracer = create_tracer()
-        
+
         # State для resume
         self.state_file = self.output_path / ".pipeline_state.json"
         self.state = self._load_state()
-        
+
         # Graceful shutdown
         self._shutdown_requested = False
         self._setup_signal_handlers()
-        
+
         logger.info(f"Pipeline initialized: {project_path} -> {output_path}")
 
     def _setup_signal_handlers(self):
@@ -265,7 +264,7 @@ class ConversionPipeline:
             self._save_state()
             logger.info("State saved. Exiting.")
             sys.exit(0)
-        
+
         try:
             signal.signal(signal.SIGTERM, signal_handler)
             signal.signal(signal.SIGINT, signal_handler)
@@ -330,7 +329,7 @@ class ConversionPipeline:
             for f in src_dir.rglob(ext):
                 if not f.is_file():
                     continue
-                
+
                 if self._shutdown_requested:
                     break
 
@@ -465,7 +464,7 @@ class ConversionPipeline:
 
         self.state["phase1_done"] = True
         self._save_state()
-        
+
         self.metrics.record_phase("phase1_analyze", time.time() - phase_start)
         return analysis
 
@@ -543,7 +542,7 @@ class ConversionPipeline:
         for idx, cls in enumerate(classes[start_idx:], start=start_idx):
             if self._shutdown_requested:
                 break
-            
+
             self._bar(idx + 1 - start_idx, len(classes) - start_idx, "Haskell")
 
             source_path = cls["file"]
@@ -567,12 +566,12 @@ class ConversionPipeline:
                 (hs_dir / f"{cls['name']}.hs").write_text(cached)
                 self.metrics.record_cache_hit()
                 continue
-            
+
             self.metrics.record_cache_miss()
 
             # AI call - используем RLM для больших файлов если включено
             prompt = PROMPTS["cpp_to_haskell"].format(code=content)
-            
+
             # RLM для контекстов > 2000 символов (если включено)
             if self.rlm and len(content) > 2000:
                 try:
@@ -605,7 +604,7 @@ class ConversionPipeline:
         self.state["phase3_done"] = True
         self.state["last_class_idx"] = len(classes)
         self._save_state()
-        
+
         sys.stdout.write("\n")
         logger.info(f"   ✅ {hs_count} Haskell files")
 
@@ -645,7 +644,7 @@ class ConversionPipeline:
                 continue
 
             prompt = PROMPTS["qml_convert"].format(code=content)
-            
+
             # RLM для больших файлов
             if self.rlm and len(content) > 1500:
                 try:
@@ -665,7 +664,7 @@ class ConversionPipeline:
         qml_count = len(list(qml_dir.glob("*.qml")))
         self.state["phase4_done"] = True
         self._save_state()
-        
+
         logger.info(f"   ✅ {qml_count} QML files")
         self.metrics.record_phase("phase4_qml", time.time() - phase_start)
 
@@ -701,7 +700,7 @@ class ConversionPipeline:
                 continue
 
             prompt = PROMPTS["report_convert"].format(code=content)
-            
+
             # RLM для больших файлов
             if self.rlm and len(content) > 1200:
                 try:
@@ -728,7 +727,7 @@ class ConversionPipeline:
                     (dirs["jasper"] / f"{rpt['name']}.jrxml").write_text(data.get("jasper", ""))
                     (dirs["pentaho"] / f"{rpt['name']}.xaction").write_text(data.get("pentaho", ""))
                     (dirs["pdfslave"] / f"{rpt['name']}.yaml").write_text(data.get("pdfslave", ""))
-                except json.JSONDecodeError as e:
+                except json.JSONDecodeError:
                     # Пробуем найти JSON в ответе через regex
                     try:
                         # Ищем { ... } блок
@@ -739,20 +738,19 @@ class ConversionPipeline:
                             (dirs["pentaho"] / f"{rpt['name']}.xaction").write_text(data.get("pentaho", ""))
                             (dirs["pdfslave"] / f"{rpt['name']}.yaml").write_text(data.get("pdfslave", ""))
                             continue
-                    except:
-                        pass
-                    logger.warning(f"JSON parse error for {rpt['name']}: {e}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"JSON parse error for {rpt['name']}: {e}")
 
         self.state["phase5_done"] = True
         self._save_state()
-        
+
         logger.info(f"   ✅ {len(reports)} reports")
         self.metrics.record_phase("phase5_reports", time.time() - phase_start)
 
     # ==========================================================================
     # Helpers
     # ==========================================================================
-    def _extract_sql_queries(self, content: str) -> List[str]:
+    def _extract_sql_queries(self, content: str) -> list[str]:
         patterns = [
             r'SQLExecDirect\([^,]+,\s*"([^"]+)"',
             r'execute\([^,]*\s*,\s*"([^"]+)"',
@@ -763,12 +761,12 @@ class ConversionPipeline:
             queries.extend(re.findall(pattern, content, re.IGNORECASE))
         return list(set(queries))
 
-    def _extract_dependencies(self, content: str) -> List[str]:
+    def _extract_dependencies(self, content: str) -> list[str]:
         deps = []
         deps.extend(re.findall(r"\b(\w+)\s+(\w+)\s*;", content))
         deps.extend(re.findall(r"\b(\w+)\s*->\s*(\w+)\s*\(", content))
         deps.extend(re.findall(r"\b(\w+)\s*\.(\w+)\s*\(", content))
-        return list(set([d[0] for d in deps if d[0] != "this"]))
+        return list({d[0] for d in deps if d[0] != "this"})
 
     def _fallback_haskell(self, cls: dict) -> str:
         name = cls.get("name", "Unknown")
@@ -811,7 +809,7 @@ executable converted-project
     # ==========================================================================
     async def run(self, force: bool = False):
         total_start = time.time()
-        
+
         logger.info("🚀 AI Pipeline C++ → Haskell (v4)")
         logger.info(f"   Project: {self.project_path}")
         logger.info(f"   Output: {self.output_path}")
@@ -819,38 +817,38 @@ executable converted-project
 
         try:
             analysis = await self.phase1_analyze(force=force)
-            
+
             if not self._shutdown_requested:
                 await self.phase2_database(analysis)
-            
+
             if not self._shutdown_requested:
                 await self.phase3_haskell(analysis)
-            
+
             if not self._shutdown_requested:
                 await self.phase4_qml(analysis)
-            
+
             if not self._shutdown_requested:
                 await self.phase5_reports(analysis)
-            
+
             if not self._shutdown_requested:
                 self._generate_cabal()
 
             # Stats
             total_duration = time.time() - total_start
             self.metrics.record_phase("total", total_duration)
-            
+
             logger.info("\n📊 AI Statistics:")
             status = self.ai.get_status()
             for provider, data in status["metrics"]["by_provider"].items():
                 logger.info(f"   {provider}: {data['calls']} calls, {data.get('total_tokens', 0)} tokens")
-            
+
             # Cache stats
             cache_stats = self.cache.get_stats()
             logger.info(f"\n💾 Cache: {cache_stats['hits']} hits, {cache_stats['misses']} misses, {cache_stats['hit_rate']:.1%}")
-            
+
             # Export metrics
-            self.metrics.export_json(self.output_path / "metrics.json")
-            
+            self.metrics.export_json(str(self.output_path / "metrics.json"))
+
             logger.info(f"\n✅ Pipeline completed in {total_duration:.1f}s")
 
         except KeyboardInterrupt:

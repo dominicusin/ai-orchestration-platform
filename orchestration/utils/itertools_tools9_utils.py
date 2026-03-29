@@ -1,7 +1,7 @@
 """Itertools tools9 utilities"""
 
 import itertools
-from typing import Iterator
+from collections.abc import Iterator
 
 
 def filterfalse_2(predicate, iterable: Iterator) -> Iterator:

@@ -1,10 +1,10 @@
 """Itertools tools4 utilities"""
 
 import itertools
-from typing import List, Iterator, Callable
+from collections.abc import Callable, Iterator
 
 
-def compress_data(iterable: List, selectors: List) -> Iterator:
+def compress_data(iterable: list, selectors: list) -> Iterator:
     """Compress data"""
     return itertools.compress(iterable, selectors)
 

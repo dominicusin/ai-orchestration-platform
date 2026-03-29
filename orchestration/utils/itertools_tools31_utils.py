@@ -1,6 +1,5 @@
 """Itertools tools31 utilities"""
 
-import itertools
 
 
 def dict_2(iterable):

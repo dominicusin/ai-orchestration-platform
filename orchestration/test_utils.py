@@ -1,7 +1,7 @@
 """Test utilities"""
 
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
 
 
 def async_test(func: Callable) -> Callable:
@@ -14,7 +14,7 @@ def async_test(func: Callable) -> Callable:
 def create_mock_task(task_id: str = "test", handler: Callable = None):
     """Create mock task for testing"""
     from orchestration.graph_recursive import Task, TaskType
-    
+
     return Task(
         id=task_id,
         name=task_id,
@@ -26,7 +26,7 @@ def create_mock_task(task_id: str = "test", handler: Callable = None):
 def create_mock_agent(agent_id: str = "test_agent", capabilities: list = None):
     """Create mock agent for testing"""
     from orchestration.graph_engine import Agent
-    
+
     return Agent(
         id=agent_id,
         name=agent_id,
@@ -36,10 +36,10 @@ def create_mock_agent(agent_id: str = "test_agent", capabilities: list = None):
 
 class MockExecutor:
     """Mock executor for testing"""
-    
+
     def __init__(self):
         self.executed = []
-    
+
     def execute(self, task):
         self.executed.append(task)
         return task.handler() if task.handler else None

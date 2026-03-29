@@ -1,10 +1,9 @@
 """ABC utilities"""
 
 import abc
-from typing import Type
 
 
-def abstract_class(cls: Type):
+def abstract_class(cls: type):
     """Mark class as abstract"""
     return abc.abstractmethod(cls)
 
@@ -19,6 +18,6 @@ def abstract_property(func):
     return property(abc.abstractmethod(func))
 
 
-def register_subclass(cls: Type, subclass: Type):
+def register_subclass(cls: type, subclass: type):
     """Register subclass for abstract class"""
     cls.register(subclass)

@@ -1,7 +1,6 @@
 """Itertools tools14 utilities"""
 
 import itertools
-from typing import Iterator
 
 
 def islice_3(iterable, stop):

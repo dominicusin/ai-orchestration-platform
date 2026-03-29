@@ -1,7 +1,6 @@
 """Fractions utilities"""
 
 from fractions import Fraction
-from typing import Union
 
 
 def fraction_from_float(value: float) -> Fraction:

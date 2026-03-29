@@ -1,9 +1,9 @@
 """Dictionary utilities"""
 
-from typing import Dict, Any, List
+from typing import Any
 
 
-def deep_get(d: Dict, key: str, default: Any = None) -> Any:
+def deep_get(d: dict, key: str, default: Any = None) -> Any:
     """Deep get nested dict value"""
     keys = key.split('.')
     result = d
@@ -17,7 +17,7 @@ def deep_get(d: Dict, key: str, default: Any = None) -> Any:
     return result
 
 
-def deep_set(d: Dict, key: str, value: Any):
+def deep_set(d: dict, key: str, value: Any):
     """Deep set nested dict value"""
     keys = key.split('.')
     current = d
@@ -28,7 +28,7 @@ def deep_set(d: Dict, key: str, value: Any):
     current[keys[-1]] = value
 
 
-def flatten_dict(d: Dict, parent_key: str = '', sep: str = '.') -> Dict:
+def flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:
     """Flatten nested dict"""
     items = []
     for k, v in d.items():
@@ -40,6 +40,6 @@ def flatten_dict(d: Dict, parent_key: str = '', sep: str = '.') -> Dict:
     return dict(items)
 
 
-def filter_dict(d: Dict, keys: List[str]) -> Dict:
+def filter_dict(d: dict, keys: list[str]) -> dict:
     """Filter dict by keys"""
     return {k: v for k, v in d.items() if k in keys}

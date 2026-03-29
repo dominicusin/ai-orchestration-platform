@@ -1,7 +1,7 @@
 """Itertools tools utilities"""
 
 import itertools
-from typing import List, Iterator
+from collections.abc import Iterator
 
 
 def count_start(step: int = 1) -> Iterator:
@@ -9,7 +9,7 @@ def count_start(step: int = 1) -> Iterator:
     return itertools.count(step=step)
 
 
-def cycle_list(items: List) -> Iterator:
+def cycle_list(items: list) -> Iterator:
     """Cycle list"""
     return itertools.cycle(items)
 

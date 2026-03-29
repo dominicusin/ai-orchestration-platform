@@ -1,7 +1,8 @@
 """Contextlib utilities"""
 
 import contextlib
-from typing import Generator, Any
+from collections.abc import Generator
+from typing import Any
 
 
 @contextlib.contextmanager

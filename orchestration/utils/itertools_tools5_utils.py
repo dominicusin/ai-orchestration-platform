@@ -1,15 +1,15 @@
 """Itertools tools5 utilities"""
 
 import itertools
-from typing import List, Iterator, Callable, Optional
+from collections.abc import Callable, Iterator
 
 
-def groupby_key(iterable: Iterator, key: Optional[Callable] = None) -> Iterator:
+def groupby_key(iterable: Iterator, key: Callable | None = None) -> Iterator:
     """Group by key"""
     return itertools.groupby(iterable, key)
 
 
-def tee_n(iterable: Iterator, n: int = 2) -> List[Iterator]:
+def tee_n(iterable: Iterator, n: int = 2) -> list[Iterator]:
     """Tee iterable"""
     return itertools.tee(iterable, n)
 

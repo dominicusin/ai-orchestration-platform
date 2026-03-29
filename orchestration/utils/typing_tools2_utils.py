@@ -1,6 +1,6 @@
 """Typing tools2 utilities"""
 
-from typing import Optional, Union, Any
+from typing import Any, Optional, Union
 
 
 def optional_type():

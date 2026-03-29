@@ -2,7 +2,7 @@
 
 import functools
 import time
-from typing import Callable, Any
+from collections.abc import Callable
 
 
 def once(func: Callable) -> Callable:
@@ -44,7 +44,7 @@ def deprecated(message: str = "This function is deprecated"):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             import warnings
-            warnings.warn(message, DeprecationWarning)
+            warnings.warn(message, DeprecationWarning, stacklevel=2)
             return func(*args, **kwargs)
         return wrapper
     return decorator

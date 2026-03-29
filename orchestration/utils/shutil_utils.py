@@ -1,8 +1,6 @@
 """Shutil utilities"""
 
 import shutil
-import os
-from typing import Optional
 
 
 def copy_file(src: str, dst: str):

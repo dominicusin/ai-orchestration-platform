@@ -1,7 +1,6 @@
 """Audit logging"""
 
 import logging
-from typing import Dict, Any
 from datetime import datetime
 
 logger = logging.getLogger("orchestration.audit")
@@ -9,11 +8,11 @@ logger = logging.getLogger("orchestration.audit")
 
 class AuditLogger:
     """Audit log events"""
-    
+
     def __init__(self):
         self.events = []
-    
-    def log(self, action: str, user: str, details: Dict = None):
+
+    def log(self, action: str, user: str, details: dict = None):
         event = {
             "timestamp": datetime.now().isoformat(),
             "action": action,
@@ -22,7 +21,7 @@ class AuditLogger:
         }
         self.events.append(event)
         logger.info(f"Audit: {action} by {user}")
-    
+
     def get_events(self, limit: int = 100):
         return self.events[-limit:]
 

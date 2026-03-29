@@ -1,7 +1,6 @@
 """Validation utilities"""
 
 import re
-from typing import Any, List
 
 
 def is_email(value: str) -> bool:
@@ -28,7 +27,7 @@ def is_json(value: str) -> bool:
     try:
         json.loads(value)
         return True
-    except:
+    except (json.JSONDecodeError, TypeError):
         return False
 
 

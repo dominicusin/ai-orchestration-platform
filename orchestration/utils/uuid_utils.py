@@ -1,7 +1,6 @@
 """UUID utilities"""
 
 import uuid
-from typing import UUID
 
 
 def uuid4_str() -> str:
@@ -25,5 +24,5 @@ def is_valid_uuid_str(s: str) -> bool:
     try:
         uuid.UUID(s)
         return True
-    except:
+    except (ValueError, AttributeError):
         return False

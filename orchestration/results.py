@@ -1,98 +1,174 @@
-"""Pipeline result types and serializers"""
+"""
+Results handling
+Обработка результатов операций
+"""
 
-import json
-import logging
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
-logger = logging.getLogger("orchestration.results")
 
-
-class ResultStatus(str, Enum):
-    """Result status"""
+class ResultStatus(Enum):
+    """Статус результата"""
     SUCCESS = "success"
-    FAILED = "failed"
+    FAILURE = "failure"
     PARTIAL = "partial"
-    SKIPPED = "skipped"
+    PENDING = "pending"
+    CANCELLED = "cancelled"
 
 
 @dataclass
-class FileResult:
-    """Single file conversion result"""
-    source_file: str
-    output_file: str
-    status: str
-    format: str
-    size_bytes: int = 0
-    duration_ms: float = 0
-    error: Optional[str] = None
+class Result:
+    """Результат операции"""
+    status: ResultStatus
+    data: Any = None
+    error: str = None
+    message: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    metadata: dict = field(default_factory=dict)
+
+    def is_success(self) -> bool:
+        """Успешный результат?"""
+        return self.status == ResultStatus.SUCCESS
+
+    def is_failure(self) -> bool:
+        """Неудачный результат?"""
+        return self.status == ResultStatus.FAILURE
+
+    def is_pending(self) -> bool:
+        """Ожидающий результат?"""
+        return self.status == ResultStatus.PENDING
+
+    def get_data(self, default: Any = None) -> Any:
+        """Получение данных с默认值"""
+        return self.data if self.data is not None else default
 
 
-@dataclass
-class PhaseResult:
-    """Phase execution result"""
-    phase: str
-    status: str
-    files_processed: int = 0
-    files_failed: int = 0
-    duration_ms: float = 0
-    file_results: List[FileResult] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+class ResultBuilder:
+    """Строитель результатов"""
+
+    def __init__(self):
+        self._status = ResultStatus.PENDING
+        self._data = None
+        self._error = None
+        self._message = ""
+        self._metadata = {}
+
+    def success(self, data: Any = None, message: str = "") -> Result:
+        """Успешный результат"""
+        return Result(
+            status=ResultStatus.SUCCESS,
+            data=data,
+            message=message,
+            metadata=self._metadata,
+        )
+
+    def failure(self, error: str, message: str = "") -> Result:
+        """Неудачный результат"""
+        return Result(
+            status=ResultStatus.FAILURE,
+            error=error,
+            message=message,
+            metadata=self._metadata,
+        )
+
+    def partial(self, data: Any = None, message: str = "") -> Result:
+        """Частичный результат"""
+        return Result(
+            status=ResultStatus.PARTIAL,
+            data=data,
+            message=message,
+            metadata=self._metadata,
+        )
+
+    def pending(self, message: str = "") -> Result:
+        """Ожидающий результат"""
+        return Result(
+            status=ResultStatus.PENDING,
+            message=message,
+            metadata=self._metadata,
+        )
+
+    def cancelled(self, message: str = "") -> Result:
+        """Отменённый результат"""
+        return Result(
+            status=ResultStatus.CANCELLED,
+            message=message,
+            metadata=self._metadata,
+        )
+
+    def with_metadata(self, key: str, value: Any) -> "ResultBuilder":
+        """Добавление метаданных"""
+        self._metadata[key] = value
+        return self
 
 
-@dataclass
-class PipelineResult:
-    """Complete pipeline result"""
-    success: bool
-    started_at: str
-    completed_at: str
-    duration_ms: float
-    phase_results: List[PhaseResult] = field(default_factory=list)
-    total_files: int = 0
-    converted_files: int = 0
-    failed_files: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict:
-        return asdict(self)
-    
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), indent=2)
-    
-    @classmethod
-    def from_dict(cls, data: Dict) -> "PipelineResult":
-        return cls(**data)
+def success(data: Any = None, message: str = "") -> Result:
+    """Создание успешного результата"""
+    return Result(
+        status=ResultStatus.SUCCESS,
+        data=data,
+        message=message,
+    )
 
 
-class ResultSerializer:
-    """Serialize/deserialize results"""
-    
-    @staticmethod
-    def to_json(result: PipelineResult) -> str:
-        """Serialize to JSON"""
-        return result.to_json()
-    
-    @staticmethod
-    def to_dict(result: PipelineResult) -> Dict:
-        """Serialize to dict"""
-        return result.to_dict()
-    
-    @staticmethod
-    def from_json(json_str: str) -> PipelineResult:
-        """Deserialize from JSON"""
-        data = json.loads(json_str)
-        return PipelineResult.from_dict(data)
-    
-    @staticmethod
-    def save(result: PipelineResult, path: str):
-        """Save to file"""
-        with open(path, "w") as f:
-            f.write(result.to_json())
-    
-    @staticmethod
-    def load(path: str) -> PipelineResult:
-        """Load from file"""
-        with open(path, "r") as f:
-            return ResultSerializer.from_json(f.read())
+def failure(error: str, message: str = "") -> Result:
+    """Создание неудачного результата"""
+    return Result(
+        status=ResultStatus.FAILURE,
+        error=error,
+        message=message,
+    )
+
+
+def partial(data: Any = None, message: str = "") -> Result:
+    """Создание частичного результата"""
+    return Result(
+        status=ResultStatus.PARTIAL,
+        data=data,
+        message=message,
+    )
+
+
+class ResultCollection:
+    """Коллекция результатов"""
+
+    def __init__(self):
+        self._results: list[Result] = []
+
+    def add(self, result: Result):
+        """Добавление результата"""
+        self._results.append(result)
+
+    def get_all(self) -> list[Result]:
+        """Получение всех результатов"""
+        return list(self._results)
+
+    def get_successful(self) -> list[Result]:
+        """Получение успешных результатов"""
+        return [r for r in self._results if r.is_success()]
+
+    def get_failed(self) -> list[Result]:
+        """Получение неудачных результатов"""
+        return [r for r in self._results if r.is_failure()]
+
+    def is_all_success(self) -> bool:
+        """Все успешны?"""
+        return all(r.is_success() for r in self._results)
+
+    def is_any_failure(self) -> bool:
+        """Есть неудачи?"""
+        return any(r.is_failure() for r in self._results)
+
+    def count(self) -> int:
+        """Количество"""
+        return len(self._results)
+
+    def successful_count(self) -> int:
+        """Количество успешных"""
+        return len(self.get_successful())
+
+    def failed_count(self) -> int:
+        """Количество неудачных"""
+        return len(self.get_failed())

@@ -1,281 +1,368 @@
-"""Execution engine for recursive DAG with agent assignment"""
+"""
+Graph Engine - Graph operations and algorithms
+Движок графов - операции и алгоритмы на графах
+"""
 
-import asyncio
-import logging
-from typing import Dict, Any, List, Optional, Callable
+import heapq
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from collections import defaultdict
-import time
-import uuid
-
-logger = logging.getLogger("orchestration.graph_engine")
+from typing import Any, Optional
 
 
 @dataclass
-class ExecutionResult:
-    """Result of task execution"""
-    task_id: str
-    success: bool
-    result: Any = None
-    error: Optional[str] = None
-    duration: float = 0
-    agent_id: Optional[str] = None
+class Edge:
+    """Ребро графа"""
+    from_node: str
+    to_node: str
+    weight: float = 1.0
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
-class Agent:
-    """Worker agent"""
+class GraphNode:
+    """Узел графа"""
     id: str
-    name: str
-    capabilities: set
-    busy: bool = False
-    
-    def can_execute(self, required_cap: str) -> bool:
-        return required_cap in self.capabilities
+    value: Any = None
+    metadata: dict = field(default_factory=dict)
 
 
-class AgentPool:
-    """Pool of execution agents"""
-    
-    def __init__(self):
-        self.agents: Dict[str, Agent] = {}
-    
-    def add_agent(self, agent: Agent):
-        self.agents[agent.id] = agent
-    
-    def get_available(self, required_cap: str = None) -> Optional[Agent]:
-        """Get available agent that can execute task"""
-        for agent in self.agents.values():
-            if not agent.busy:
-                if required_cap is None or agent.can_execute(required_cap):
-                    return agent
-        return None
-    
-    def get_by_capability(self, required_cap: str) -> List[Agent]:
-        """Get all agents with capability"""
-        return [
-            a for a in self.agents.values()
-            if a.can_execute(required_cap)
+class GraphEngine:
+    """Движок графов с алгоритмами"""
+
+    def __init__(self, directed: bool = False):
+        self.directed = directed
+        self._nodes: dict[str, GraphNode] = {}
+        self._adjacency: dict[str, list[tuple[str, float]]] = defaultdict(list)
+        self._edges: list[Edge] = []
+
+    def add_node(self, node_id: str, value: Any = None, metadata: dict = None) -> "GraphEngine":
+        """Добавление узла"""
+        self._nodes[node_id] = GraphNode(id=node_id, value=value, metadata=metadata or {})
+        if node_id not in self._adjacency:
+            self._adjacency[node_id] = []
+        return self
+
+    def add_edge(self, from_node: str, to_node: str, weight: float = 1.0, metadata: dict = None) -> "GraphEngine":
+        """Добавление ребра"""
+        # Ensure nodes exist
+        if from_node not in self._nodes:
+            self.add_node(from_node)
+        if to_node not in self._nodes:
+            self.add_node(to_node)
+
+        self._adjacency[from_node].append((to_node, weight))
+        if not self.directed:
+            self._adjacency[to_node].append((from_node, weight))
+
+        edge = Edge(from_node, to_node, weight, metadata or {})
+        self._edges.append(edge)
+        return self
+
+    def get_node(self, node_id: str) -> GraphNode | None:
+        """Получение узла"""
+        return self._nodes.get(node_id)
+
+    def get_neighbors(self, node_id: str) -> list[str]:
+        """Получение соседей узла"""
+        return [neighbor for neighbor, _ in self._adjacency.get(node_id, [])]
+
+    def get_edges(self) -> list[Edge]:
+        """Получение всех рёбер"""
+        return self._edges
+
+    def node_count(self) -> int:
+        """Количество узлов"""
+        return len(self._nodes)
+
+    def edge_count(self) -> int:
+        """Количество рёбер"""
+        return len(self._edges)
+
+    def has_node(self, node_id: str) -> bool:
+        """Проверка существования узла"""
+        return node_id in self._nodes
+
+    def has_edge(self, from_node: str, to_node: str) -> bool:
+        """Проверка существования ребра"""
+        neighbors = self.get_neighbors(from_node)
+        return to_node in neighbors
+
+    def remove_node(self, node_id: str) -> bool:
+        """Удаление узла"""
+        if node_id not in self._nodes:
+            return False
+
+        del self._nodes[node_id]
+        del self._adjacency[node_id]
+
+        # Remove edges
+        self._edges = [e for e in self._edges if e.from_node != node_id and e.to_node != node_id]
+        self._adjacency = {
+            k: [(n, w) for n, w in v if n != node_id]
+            for k, v in self._adjacency.items()
+        }
+        return True
+
+    def remove_edge(self, from_node: str, to_node: str) -> bool:
+        """Удаление ребра"""
+        original_count = len(self._edges)
+        self._edges = [
+            e for e in self._edges
+            if not (e.from_node == from_node and e.to_node == to_node)
         ]
+        return len(self._edges) < original_count
 
+    def dijkstra(self, start: str, end: str) -> tuple[list[str], float] | None:
+        """Алгоритм Дейкстры"""
+        if start not in self._nodes or end not in self._nodes:
+            return None
 
-class DAGExecutor:
-    """Execute DAG with agent assignment"""
-    
-    def __init__(self, agent_pool: AgentPool):
-        self.agent_pool = agent_pool
-        self.results: Dict[str, ExecutionResult] = {}
-        self.task_queue: asyncio.Queue = None
-        self.workers: List[asyncio.Task] = []
-    
-    async def execute(self, dag) -> Dict[str, ExecutionResult]:
-        """Execute DAG with topological ordering"""
-        layers = dag.get_execution_layers()
-        
-        logger.info(f"Executing DAG with {len(layers)} layers")
-        
-        for layer_idx, layer in enumerate(layers):
-            logger.info(f"Layer {layer_idx + 1}/{len(layers)}: {len(layer)} tasks")
-            
-            # Execute all tasks in layer concurrently
-            tasks = []
-            for task in layer:
-                t = asyncio.create_task(self._execute_task(task))
-                tasks.append(t)
-            
-            # Wait for layer to complete
-            await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Check for failures
-            failed = [t for t in layer if self.results.get(t.id, ExecutionResult("", False)).success == False]
-            if failed:
-                logger.warning(f"Layer {layer_idx} has {len(failed)} failed tasks")
+        distances = {node: float('inf') for node in self._nodes}
+        distances[start] = 0
+        previous = dict.fromkeys(self._nodes)
+        pq = [(0, start)]
+
+        while pq:
+            current_dist, current = heapq.heappop(pq)
+
+            if current == end:
                 break
-        
-        return self.results
-    
-    async def _execute_task(self, task) -> ExecutionResult:
-        """Execute single task with agent"""
-        start_time = time.time()
-        
-        # Get capable agent
-        required_cap = task.required_capability.value if task.required_capability else None
-        agent = self.agent_pool.get_available(required_cap)
-        
-        if agent is None:
-            # Wait for available agent
-            while agent is None:
-                await asyncio.sleep(0.1)
-                agent = self.agent_pool.get_available(required_cap)
-        
-        agent.busy = True
-        
-        try:
-            # Execute task
-            if task.handler:
-                if asyncio.iscoroutinefunction(task.handler):
-                    result = await task.handler(*task.args, **task.kwargs)
-                else:
-                    result = task.handler(*task.args, **task.kwargs)
-            else:
-                # Composite task - aggregate subtask results
-                subtask_results = [
-                    self.results[st.id].result
-                    for st in task.subtasks
-                    if st.id in self.results
-                ]
-                result = task.aggregator(subtask_results) if task.aggregator else subtask_results
-            
-            execution_result = ExecutionResult(
-                task_id=task.id,
-                success=True,
-                result=result,
-                duration=time.time() - start_time,
-                agent_id=agent.id,
-            )
-            
-        except Exception as e:
-            execution_result = ExecutionResult(
-                task_id=task.id,
-                success=False,
-                error=str(e),
-                duration=time.time() - start_time,
-                agent_id=agent.id,
-            )
-            logger.error(f"Task {task.id} failed: {e}")
-        
-        finally:
-            agent.busy = False
-        
-        self.results[task.id] = execution_result
-        return execution_result
+
+            if current_dist > distances[current]:
+                continue
+
+            for neighbor, weight in self._adjacency[current]:
+                distance = current_dist + weight
+                if distance < distances[neighbor]:
+                    distances[neighbor] = distance
+                    previous[neighbor] = current
+                    heapq.heappush(pq, (distance, neighbor))
+
+        if distances[end] == float('inf'):
+            return None
+
+        # Reconstruct path
+        path = []
+        current = end
+        while current:
+            path.append(current)
+            current = previous[current]
+        path.reverse()
+
+        return path, distances[end]
+
+    def bfs(self, start: str) -> list[str]:
+        """Поиск в ширину"""
+        if start not in self._nodes:
+            return []
+
+        visited = {start}
+        queue = deque([start])
+        result = []
+
+        while queue:
+            node = queue.popleft()
+            result.append(node)
+
+            for neighbor, _ in self._adjacency[node]:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+
+        return result
+
+    def dfs(self, start: str) -> list[str]:
+        """Поиск в глубину"""
+        if start not in self._nodes:
+            return []
+
+        visited = set()
+        result = []
+        stack = [start]
+
+        while stack:
+            node = stack.pop()
+            if node not in visited:
+                visited.add(node)
+                result.append(node)
+
+                # Add neighbors in reverse order for consistent ordering
+                neighbors = [n for n, _ in self._adjacency[node]]
+                stack.extend(reversed(neighbors))
+
+        return result
+
+    def topological_sort(self) -> list[str] | None:
+        """Топологическая сортировка"""
+        if not self.directed:
+            return None
+
+        in_degree = dict.fromkeys(self._nodes, 0)
+        for edge in self._edges:
+            in_degree[edge.to_node] += 1
+
+        queue = deque([node for node, degree in in_degree.items() if degree == 0])
+        result = []
+
+        while queue:
+            node = queue.popleft()
+            result.append(node)
+
+            for neighbor, _ in self._adjacency[node]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        if len(result) != len(self._nodes):
+            return None  # Cycle detected
+
+        return result
+
+    def find_path(self, start: str, end: str) -> list[str] | None:
+        """Поиск пути (BFS)"""
+        if start not in self._nodes or end not in self._nodes:
+            return None
+
+        visited = {start}
+        queue = deque([(start, [start])])
+
+        while queue:
+            node, path = queue.popleft()
+
+            if node == end:
+                return path
+
+            for neighbor, _ in self._adjacency[node]:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, path + [neighbor]))
+
+        return None
+
+    def find_all_paths(self, start: str, end: str) -> list[list[str]]:
+        """Поиск всех путей"""
+        if start not in self._nodes or end not in self._nodes:
+            return []
+
+        paths = []
+
+        def dfs(current: str, path: list[str]):
+            if current == end:
+                paths.append(path)
+                return
+
+            for neighbor, _ in self._adjacency[current]:
+                if neighbor not in path:
+                    dfs(neighbor, path + [neighbor])
+
+        dfs(start, [start])
+        return paths
+
+    def is_connected(self) -> bool:
+        """Проверка связности графа"""
+        if not self._nodes:
+            return True
+
+        visited = set(self.bfs(list(self._nodes.keys())[0]))
+        return len(visited) == len(self._nodes)
+
+    def get_connected_components(self) -> list[set[str]]:
+        """Получение компонент связности"""
+        visited = set()
+        components = []
+
+        for node in self._nodes:
+            if node not in visited:
+                component = set(self.bfs(node))
+                visited.update(component)
+                components.append(component)
+
+        return components
+
+    def degree(self, node_id: str) -> int:
+        """Степень узла"""
+        if node_id not in self._nodes:
+            return 0
+        return len(self._adjacency[node_id])
+
+    def clear(self):
+        """Очистка графа"""
+        self._nodes.clear()
+        self._adjacency.clear()
+        self._edges.clear()
 
 
-class RecursiveExecutor:
-    """Execute with recursive decomposition on-the-fly"""
-    
-    def __init__(self, agent_pool: AgentPool, max_depth: int = 5):
-        self.agent_pool = agent_pool
-        self.max_depth = max_depth
-        self.results: Dict[str, Any] = {}
-    
-    async def execute(
-        self,
-        task_name: str,
-        items: List[Any],
-        decompose_func: Callable,
-        process_func: Callable,
-        depth: int = 0,
-    ) -> Any:
-        """
-        Recursively execute with decomposition
-        
-        Returns when task is atomic (executable by agent)
-        """
-        # Check if should decompose
-        should_decompose = depth < self.max_depth and len(items) > 10
-        
-        if not should_decompose:
-            # Atomic - execute directly
-            return await self._execute_atomic(task_name, items, process_func)
-        
-        # Decompose
-        sub_groups = decompose_func(items)
-        
-        # Execute subtasks recursively
-        subtask_results = {}
-        for sub_name, sub_items in sub_groups.items():
-            result = await self.execute(
-                f"{task_name}.{sub_name}",
-                sub_items,
-                decompose_func,
-                process_func,
-                depth + 1,
-            )
-            subtask_results[sub_name] = result
-        
-        # Aggregate results
-        return self._aggregate(subtask_results)
-    
-    async def _execute_atomic(
-        self,
-        task_name: str,
-        items: List[Any],
-        process_func: Callable,
-    ) -> Any:
-        """Execute atomic task with available agent"""
-        # Get any available agent
-        agent = self.agent_pool.get_available()
-        
-        if agent is None:
-            await asyncio.sleep(0.1)
-            return await self._execute_atomic(task_name, items, process_func)
-        
-        agent.busy = True
-        try:
-            return process_func(items)
-        finally:
-            agent.busy = False
-    
-    def _aggregate(self, results: Dict[str, Any]) -> Any:
-        """Aggregate subtask results"""
-        # Flatten if single value
-        if len(results) == 1:
-            return list(results.values())[0]
-        return results
+class WeightedGraphEngine(GraphEngine):
+    """Взвешенный граф"""
+
+    def __init__(self, directed: bool = False):
+        super().__init__(directed)
+
+    def get_weight(self, from_node: str, to_node: str) -> float | None:
+        """Получение веса ребра"""
+        for neighbor, weight in self._adjacency.get(from_node, []):
+            if neighbor == to_node:
+                return weight
+        return None
+
+    def prim_mst(self) -> Optional["GraphEngine"]:
+        """Алгоритм Прима для минимального остовного дерева"""
+        if not self._nodes:
+            return None
+
+        mst = WeightedGraphEngine(self.directed)
+
+        start_node = next(iter(self._nodes))
+        visited = {start_node}
+        mst.add_node(start_node)
+
+        while len(visited) < len(self._nodes):
+            min_edge = None
+            min_weight = float('inf')
+
+            for node in visited:
+                for neighbor, weight in self._adjacency[node]:
+                    if neighbor not in visited and weight < min_weight:
+                        min_weight = weight
+                        min_edge = (node, neighbor)
+
+            if not min_edge:
+                break
+
+            from_node, to_node = min_edge
+            visited.add(to_node)
+            mst.add_node(to_node)
+            mst.add_edge(from_node, to_node, min_weight)
+
+        return mst
+
+    def bellman_ford(self, start: str) -> dict[str, float] | None:
+        """Алгоритм Беллмана-Форда"""
+        if start not in self._nodes:
+            return None
+
+        distances = {node: float('inf') for node in self._nodes}
+        distances[start] = 0
+
+        # Relax edges |V| - 1 times
+        for _ in range(len(self._nodes) - 1):
+            for edge in self._edges:
+                if distances[edge.from_node] + edge.weight < distances[edge.to_node]:
+                    distances[edge.to_node] = distances[edge.from_node] + edge.weight
+
+        # Check for negative cycles
+        for edge in self._edges:
+            if distances[edge.from_node] + edge.weight < distances[edge.to_node]:
+                return None  # Negative cycle detected
+
+        return distances
 
 
-# Example: Execute pipeline with DAG
-async def execute_pipeline(
-    items: List[Any],
-    stages: List[Callable],
-    num_agents: int = 4,
-) -> Dict[str, ExecutionResult]:
-    """Execute pipeline with DAG"""
-    
-    # Create agents
-    agent_pool = AgentPool()
-    for i in range(num_agents):
-        agent_pool.add_agent(Agent(
-            id=f"agent_{i}",
-            name=f"Worker {i}",
-            capabilities={"file_read", "file_write", "llm_call", "code_execute", "data_transform"},
-        ))
-    
-    # Build DAG from stages
-    from orchestration.graph_recursive import RecursiveDAG
-    
-    dag = RecursiveDAG()
-    
-    for i, stage in enumerate(stages):
-        # Simple decomposition for example
-        def make_decomposer(idx):
-            return lambda items: {
-                f"chunk_{j}": items[j:j+10]
-                for j in range(0, len(items), 10)
-            }
-        
-        dag.build_from_decomposition(
-            task_id=f"stage_{i}",
-            task_name=f"stage_{i}",
-            items=items,
-            decompose_func=make_decomposer(i),
-            get_handler=lambda itms: lambda: [stage(itm) for itm in itms],
-            get_capability=lambda itms: "code_execute",
-        )
-    
-    # Execute
-    executor = DAGExecutor(agent_pool)
-    return await executor.execute(dag)
+def create_graph(directed: bool = False) -> GraphEngine:
+    """Создание графа"""
+    return GraphEngine(directed)
 
 
-# Global executor
-_executor: Optional[DAGExecutor] = None
-
-
-def get_executor(agent_pool: AgentPool) -> DAGExecutor:
-    """Get executor instance"""
-    global _executor
-    if _executor is None:
-        _executor = DAGExecutor(agent_pool)
-    return _executor
+def create_weighted_graph(directed: bool = False) -> WeightedGraphEngine:
+    """Создание взвешенного графа"""
+    return WeightedGraphEngine(directed)

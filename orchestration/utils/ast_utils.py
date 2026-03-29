@@ -1,7 +1,6 @@
 """AST utilities"""
 
 import ast
-from typing import Any, List
 
 
 def parse_code(code: str) -> ast.Module:
@@ -9,22 +8,22 @@ def parse_code(code: str) -> ast.Module:
     return ast.parse(code)
 
 
-def get_functions(tree: ast.Module) -> List[ast.FunctionDef]:
+def get_functions(tree: ast.Module) -> list[ast.FunctionDef]:
     """Get all functions from AST"""
     return [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
 
 
-def get_classes(tree: ast.Module) -> List[ast.ClassDef]:
+def get_classes(tree: ast.Module) -> list[ast.ClassDef]:
     """Get all classes from AST"""
     return [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
 
 
-def get_imports(tree: ast.Module) -> List[str]:
+def get_imports(tree: ast.Module) -> list[str]:
     """Get all imports from AST"""
     return [node.names[0].name for node in ast.walk(tree) if isinstance(node, ast.Import)]
 
 
-def get_import_froms(tree: ast.Module) -> List[tuple]:
+def get_import_froms(tree: ast.Module) -> list[tuple]:
     """Get from...import statements"""
     result = []
     for node in ast.walk(tree):

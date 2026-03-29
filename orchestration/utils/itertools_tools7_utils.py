@@ -1,7 +1,7 @@
 """Itertools tools7 utilities"""
 
 import itertools
-from typing import Iterator
+from collections.abc import Iterator
 
 
 def count_2(start: int = 0, step: int = 1) -> Iterator:

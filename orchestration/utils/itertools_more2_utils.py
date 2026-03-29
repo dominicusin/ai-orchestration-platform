@@ -1,20 +1,20 @@
 """Itertools more utilities"""
 
 import itertools
-from typing import List, Iterator
+from collections.abc import Iterator
 
 
-def combinations_r(items: List, r: int) -> Iterator:
+def combinations_r(items: list, r: int) -> Iterator:
     """Combinations with replacement"""
     return itertools.combinations_with_replacement(items, r)
 
 
-def permutations_count(items: List, r: int) -> int:
+def permutations_count(items: list, r: int) -> int:
     """Count permutations"""
     return len(list(itertools.permutations(items, r)))
 
 
-def product_repeat(items: List, repeat: int) -> Iterator:
+def product_repeat(items: list, repeat: int) -> Iterator:
     """Product with repeat"""
     return itertools.product(items, repeat=repeat)
 

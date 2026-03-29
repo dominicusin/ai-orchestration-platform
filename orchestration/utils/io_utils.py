@@ -1,7 +1,6 @@
 """IO utilities"""
 
 import io
-from typing import Any
 
 
 def string_io(initial: str = "") -> io.StringIO:

@@ -1,7 +1,7 @@
 """Itertools extensions"""
 
 import itertools
-from typing import List, Iterator, Callable
+from collections.abc import Callable, Iterator
 
 
 def takewhile_pred(predicate: Callable, iterable: Iterator) -> Iterator:
@@ -19,7 +19,7 @@ def groupby_key(iterable: Iterator, key: Callable = None) -> Iterator:
     return itertools.groupby(iterable, key)
 
 
-def compress_data(selectors: List, iterable: List) -> Iterator:
+def compress_data(selectors: list, iterable: list) -> Iterator:
     """Compress iterable by selectors"""
     return itertools.compress(iterable, selectors)
 
@@ -29,6 +29,6 @@ def islice_advanced(iterable: Iterator, *args) -> Iterator:
     return itertools.islice(iterable, *args)
 
 
-def tee_iterable(iterable: Iterator, n: int = 2) -> List[Iterator]:
+def tee_iterable(iterable: Iterator, n: int = 2) -> list[Iterator]:
     """Tee iterable"""
     return itertools.tee(iterable, n)

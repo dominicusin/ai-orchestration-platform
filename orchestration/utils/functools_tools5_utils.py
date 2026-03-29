@@ -1,7 +1,7 @@
 """Functools tools5 utilities"""
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 
 def partialmethod(func: Callable, *args, **kwargs):

@@ -1,6 +1,5 @@
 """Itertools tools28 utilities"""
 
-import itertools
 
 
 def min_2(iterable, key=None, default=None):

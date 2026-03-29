@@ -1,7 +1,7 @@
 """Itertools tools10 utilities"""
 
 import itertools
-from typing import Iterator
+from collections.abc import Iterator
 
 
 def compress_2(iterable, selectors) -> Iterator:

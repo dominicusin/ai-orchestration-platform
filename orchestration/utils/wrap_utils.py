@@ -1,7 +1,7 @@
 """Function wrapping utilities"""
 
 import functools
-from typing import Callable, Any
+from collections.abc import Callable
 
 
 def wraps(wrapped: Callable, **kwargs):

@@ -1,10 +1,9 @@
 """Cryptography utilities"""
 
+import base64
 import hashlib
 import hmac
-import base64
 import secrets
-from typing import Optional
 
 
 def generate_token(length: int = 32) -> str:
@@ -12,7 +11,7 @@ def generate_token(length: int = 32) -> str:
     return secrets.token_urlsafe(length)
 
 
-def hash_password(password: str, salt: Optional[str] = None) -> str:
+def hash_password(password: str, salt: str | None = None) -> str:
     """Hash password"""
     if salt is None:
         salt = secrets.token_hex(16)
@@ -26,7 +25,7 @@ def verify_password(password: str, hashed: str) -> bool:
         salt, data = hashed.split(':')
         new_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
         return hmac.compare_digest(data, base64.b64encode(new_hash).decode())
-    except:
+    except Exception:
         return False
 
 

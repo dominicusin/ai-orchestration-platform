@@ -1,14 +1,14 @@
 """AI module"""
 
-from typing import Dict, Any, List
+from typing import Any
 
 
 class AIClient:
     """AI client stub"""
-    
+
     def __init__(self, provider: str = "openai"):
         self.provider = provider
-    
+
     def complete(self, prompt: str) -> str:
         return f"Response from {self.provider}"
 

@@ -1,40 +1,40 @@
 """HTTP client for external APIs"""
 
-import logging
-from typing import Dict, Any, Optional
-import urllib.request
-import urllib.error
 import json
+import logging
+import urllib.error
+import urllib.request
+from typing import Any
 
 logger = logging.getLogger("orchestration.http_client")
 
 
 class HTTPClient:
     """HTTP client"""
-    
+
     def __init__(self, base_url: str = "", timeout: int = 30):
         self.base_url = base_url
         self.timeout = timeout
-    
+
     def request(
         self,
         method: str,
         path: str,
-        headers: Dict = None,
+        headers: dict = None,
         body: Any = None,
-    ) -> Dict:
+    ) -> dict:
         """Make HTTP request"""
         url = f"{self.base_url}{path}"
-        
+
         data = json.dumps(body).encode() if body else None
-        
+
         req = urllib.request.Request(
             url,
             data=data,
             headers=headers or {},
             method=method,
         )
-        
+
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return {
@@ -46,15 +46,15 @@ class HTTPClient:
                 "status": e.code,
                 "error": e.read().decode(),
             }
-    
-    def get(self, path: str, headers: Dict = None) -> Dict:
+
+    def get(self, path: str, headers: dict = None) -> dict:
         return self.request("GET", path, headers)
-    
-    def post(self, path: str, body: Any = None, headers: Dict = None) -> Dict:
+
+    def post(self, path: str, body: Any = None, headers: dict = None) -> dict:
         return self.request("POST", path, headers, body)
-    
-    def put(self, path: str, body: Any = None, headers: Dict = None) -> Dict:
+
+    def put(self, path: str, body: Any = None, headers: dict = None) -> dict:
         return self.request("PUT", path, headers, body)
-    
-    def delete(self, path: str, headers: Dict = None) -> Dict:
+
+    def delete(self, path: str, headers: dict = None) -> dict:
         return self.request("DELETE", path, headers)

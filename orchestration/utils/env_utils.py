@@ -1,7 +1,7 @@
 """Environment utilities"""
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 
 def get_env(key: str, default: Any = None, required: bool = False) -> Any:

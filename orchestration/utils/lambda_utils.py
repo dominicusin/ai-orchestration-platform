@@ -1,6 +1,7 @@
 """Lambda utilities"""
 
-from typing import Callable, Any, List
+from collections.abc import Callable
+from typing import Any
 
 
 def compose(*funcs: Callable) -> Callable:

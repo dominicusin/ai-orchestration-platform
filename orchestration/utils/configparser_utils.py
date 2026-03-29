@@ -1,7 +1,6 @@
 """ConfigParser utilities"""
 
 import configparser
-from typing import Dict
 
 
 def parse_ini(path: str) -> configparser.ConfigParser:
@@ -11,12 +10,12 @@ def parse_ini(path: str) -> configparser.ConfigParser:
     return config
 
 
-def ini_to_dict(config: configparser.ConfigParser) -> Dict:
+def ini_to_dict(config: configparser.ConfigParser) -> dict:
     """Convert INI to dict"""
     return {section: dict(config[section]) for section in config.sections()}
 
 
-def write_ini(path: str, data: Dict):
+def write_ini(path: str, data: dict):
     """Write INI file"""
     config = configparser.ConfigParser()
     for section, values in data.items():

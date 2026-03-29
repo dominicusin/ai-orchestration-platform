@@ -1,16 +1,16 @@
 """Collections more utilities"""
 
 import collections
-from typing import List, Any
+from typing import Any
 
 
-def counter_update(counter: collections.Counter, items: List) -> collections.Counter:
+def counter_update(counter: collections.Counter, items: list) -> collections.Counter:
     """Update counter with items"""
     counter.update(items)
     return counter
 
 
-def counter_subtract(counter: collections.Counter, items: List) -> collections.Counter:
+def counter_subtract(counter: collections.Counter, items: list) -> collections.Counter:
     """Subtract items from counter"""
     counter.subtract(items)
     return counter

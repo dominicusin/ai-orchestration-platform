@@ -1,7 +1,6 @@
 """HTML utilities"""
 
 import html
-from typing import Dict
 
 
 def html_escape(text: str) -> str:
@@ -20,7 +19,7 @@ def strip_tags(html_text: str) -> str:
     return re.sub(r'<[^>]+>', '', html_text)
 
 
-def parse_attr(attr_str: str) -> Dict[str, str]:
+def parse_attr(attr_str: str) -> dict[str, str]:
     """Parse HTML attributes"""
     import re
     pattern = r'(\w+)="([^"]*)"'

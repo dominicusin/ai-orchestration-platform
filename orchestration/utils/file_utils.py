@@ -1,9 +1,7 @@
 """File utilities"""
 
-import os
 import shutil
 from pathlib import Path
-from typing import List, Optional
 
 
 def ensure_dir(path: str) -> Path:
@@ -13,7 +11,7 @@ def ensure_dir(path: str) -> Path:
     return p
 
 
-def list_files(path: str, pattern: str = "*", recursive: bool = False) -> List[str]:
+def list_files(path: str, pattern: str = "*", recursive: bool = False) -> list[str]:
     """List files in directory"""
     p = Path(path)
     if recursive:

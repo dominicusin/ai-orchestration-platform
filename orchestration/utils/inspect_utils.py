@@ -1,10 +1,10 @@
 """Inspection utilities"""
 
 import inspect
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
 
 
-def get_signature(func: Callable) -> Dict:
+def get_signature(func: Callable) -> dict:
     """Get function signature"""
     sig = inspect.signature(func)
     return {
@@ -24,7 +24,7 @@ def get_callable_name(func: Callable) -> str:
     return func.__name__
 
 
-def get_args(func: Callable, args: tuple, kwargs: dict) -> Dict:
+def get_args(func: Callable, args: tuple, kwargs: dict) -> dict:
     """Get function arguments as dict"""
     sig = inspect.signature(func)
     bound = sig.bind(*args, **kwargs)
@@ -37,6 +37,6 @@ def is_async(func: Callable) -> bool:
     return inspect.iscoroutinefunction(func)
 
 
-def get_properties(obj: object) -> List[str]:
+def get_properties(obj: object) -> list[str]:
     """Get object properties"""
     return [p for p in dir(obj) if not p.startswith('_')]

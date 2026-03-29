@@ -1,8 +1,7 @@
 """Tempfile utilities"""
 
-import tempfile
 import os
-from typing import Optional
+import tempfile
 
 
 def temp_file(suffix: str = "", prefix: str = "tmp") -> str:
@@ -28,5 +27,5 @@ def cleanup_temp_files(pattern: str = "tmp*"):
     for f in glob.glob(f"/tmp/{pattern}"):
         try:
             os.remove(f)
-        except:
+        except OSError:
             pass

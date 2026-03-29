@@ -1,6 +1,5 @@
 """Itertools tools30 utilities"""
 
-import itertools
 
 
 def tuple_2(iterable):

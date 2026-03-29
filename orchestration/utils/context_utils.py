@@ -1,7 +1,7 @@
 """Context manager utilities"""
 
 import contextlib
-from typing import Generator
+from collections.abc import Generator
 
 
 @contextlib.contextmanager
@@ -37,8 +37,8 @@ def temp_env(**kwargs):
 @contextlib.contextmanager
 def temp_dir():
     """Create temporary directory"""
-    import tempfile
     import shutil
+    import tempfile
     path = tempfile.mkdtemp()
     try:
         yield path

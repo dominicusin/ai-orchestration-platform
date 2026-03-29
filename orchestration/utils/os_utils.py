@@ -1,8 +1,6 @@
 """OS utilities"""
 
 import os
-import sys
-from typing import List, Optional
 
 
 def get_cwd() -> str:
@@ -15,12 +13,12 @@ def chdir(path: str):
     os.chdir(path)
 
 
-def list_dir(path: str = ".") -> List[str]:
+def list_dir(path: str = ".") -> list[str]:
     """List directory"""
     return os.listdir(path)
 
 
-def get_env(key: str, default: Optional[str] = None) -> Optional[str]:
+def get_env(key: str, default: str | None = None) -> str | None:
     """Get environment variable"""
     return os.environ.get(key, default)
 

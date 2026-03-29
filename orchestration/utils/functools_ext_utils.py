@@ -1,7 +1,7 @@
 """Functools extensions"""
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 
 def cache_unlimited(func: Callable) -> Callable:

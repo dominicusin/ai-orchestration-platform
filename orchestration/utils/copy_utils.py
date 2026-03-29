@@ -1,7 +1,7 @@
 """Copy utilities"""
 
 import copy
-from typing import Any, Dict
+from typing import Any
 
 
 def shallow_copy(obj: Any) -> Any:
@@ -14,12 +14,12 @@ def deep_copy(obj: Any) -> Any:
     return copy.deepcopy(obj)
 
 
-def copy_dict(obj: Dict) -> Dict:
+def copy_dict(obj: dict) -> dict:
     """Copy dictionary"""
     return obj.copy()
 
 
-def deepcopy_dict(obj: Dict) -> Dict:
+def deepcopy_dict(obj: dict) -> dict:
     """Deep copy dictionary"""
     return copy.deepcopy(obj)
 

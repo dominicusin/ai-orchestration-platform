@@ -1,6 +1,7 @@
 """Iterator utilities"""
 
-from typing import Iterator, List, Callable, Any, TypeVar
+from collections.abc import Callable, Iterator
+from typing import TypeVar
 
 T = TypeVar('T')
 
@@ -13,16 +14,15 @@ def iterate(func: Callable, initial: T, condition: Callable[[T], bool]) -> Itera
         current = func(current)
 
 
-def cycle(items: List[T], times: int = None) -> Iterator[T]:
+def cycle(items: list[T], times: int = None) -> Iterator[T]:
     """Cycle through items"""
     count = 0
     while times is None or count < times:
-        for item in items:
-            yield item
+        yield from items
         count += 1
 
 
-def take(iterator: Iterator, n: int) -> List[T]:
+def take(iterator: Iterator, n: int) -> list[T]:
     """Take first n items"""
     return [next(iterator) for _ in range(n)]
 
@@ -34,7 +34,7 @@ def drop(iterator: Iterator, n: int) -> Iterator:
     return iterator
 
 
-def chunk(iterator: Iterator, size: int) -> Iterator[List[T]]:
+def chunk(iterator: Iterator, size: int) -> Iterator[list[T]]:
     """Chunk iterator into lists"""
     chunk = []
     for item in iterator:

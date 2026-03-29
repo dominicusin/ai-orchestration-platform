@@ -1,7 +1,5 @@
 """Math utilities"""
 
-import math
-from typing import List
 
 
 def clamp_val(value: float, min_val: float, max_val: float) -> float:
@@ -19,11 +17,11 @@ def map_val(value: float, in_min: float, in_max: float, out_min: float, out_max:
     return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
 
-def avg_val(values: List[float]) -> float:
+def avg_val(values: list[float]) -> float:
     """Average value"""
     return sum(values) / len(values) if values else 0
 
 
-def sum_val(values: List[float]) -> float:
+def sum_val(values: list[float]) -> float:
     """Sum values"""
     return sum(values)

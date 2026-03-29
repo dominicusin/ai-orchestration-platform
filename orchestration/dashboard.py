@@ -1,15 +1,15 @@
 """Dashboard for execution monitoring"""
 
 import json
-from typing import Dict, Any, List
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import logging
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 logger = logging.getLogger("orchestration.dashboard")
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
     """Dashboard HTTP handler"""
-    
+
     def do_GET(self):
         if self.path == "/":
             self.send_response(200)
@@ -23,7 +23,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(self.get_stats()).encode())
         else:
             self.send_error(404)
-    
+
     def get_dashboard(self) -> str:
         return """<!DOCTYPE html>
 <html><head><title>DAG Dashboard</title></head>
@@ -31,12 +31,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 <div id="stats"></div>
 <script>
 fetch('/api/stats').then(r=>r.json()).then(d=>{
-    document.getElementById('stats').innerHTML = 
+    document.getElementById('stats').innerHTML =
         'Tasks: ' + d.tasks + '<br>Completed: ' + d.completed;
 });
 </script></body></html>"""
-    
-    def get_stats(self) -> Dict:
+
+    def get_stats(self) -> dict:
         from orchestration.graph_monitor import get_monitor
         return get_monitor().get_summary()
 

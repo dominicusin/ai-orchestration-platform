@@ -1,7 +1,8 @@
 """Functools utilities"""
 
 import functools
-from typing import Callable, Any
+from collections.abc import Callable
+from typing import Any
 
 
 def tap(value: Any, func: Callable = None) -> Any:

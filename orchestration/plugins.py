@@ -1,21 +1,20 @@
 """Plugin system for extensibility"""
 
 import logging
-from typing import Dict, Any, Callable
 
 logger = logging.getLogger("orchestration.plugins")
 
 
 class Plugin:
     """Base plugin"""
-    
+
     name: str = ""
     version: str = "1.0"
-    
-    def initialize(self, context: Dict):
+
+    def initialize(self, context: dict):
         """Initialize plugin"""
         pass
-    
+
     def execute(self, *args, **kwargs):
         """Execute plugin"""
         raise NotImplementedError
@@ -23,19 +22,19 @@ class Plugin:
 
 class PluginManager:
     """Manage plugins"""
-    
+
     def __init__(self):
-        self.plugins: Dict[str, Plugin] = {}
-    
+        self.plugins: dict[str, Plugin] = {}
+
     def register(self, plugin: Plugin):
         """Register plugin"""
         self.plugins[plugin.name] = plugin
         logger.info(f"Registered plugin: {plugin.name}")
-    
+
     def get(self, name: str) -> Plugin:
         """Get plugin"""
         return self.plugins.get(name)
-    
+
     def execute(self, name: str, *args, **kwargs):
         """Execute plugin"""
         plugin = self.get(name)

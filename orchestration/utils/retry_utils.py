@@ -1,8 +1,8 @@
 """Retry utilities"""
 
-import time
 import logging
-from typing import Callable, Any, Optional
+import time
+from collections.abc import Callable
 
 logger = logging.getLogger("orchestration.utils.retry")
 

@@ -1,30 +1,30 @@
 """Entry point for running pipeline as: python -m orchestration.pipeline"""
 
-import sys
-import asyncio
 import argparse
-from pathlib import Path
+import asyncio
 import os
+import sys
+from pathlib import Path
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from orchestration.pipeline import run_pipeline
 from orchestration.ai.providers import OPENAI_COMPATIBLE_PROVIDERS, get_provider_manager
+from orchestration.pipeline import run_pipeline
 
 
 async def test_provider(provider_name: str, stream: bool = False):
     """Тестирование провайдера"""
     pm = get_provider_manager()
     provider = pm.providers.get(provider_name)
-    
+
     if not provider:
         print(f"❌ Provider '{provider_name}' not available")
         print(f"\nДоступные провайдеры: {pm.list_available()}")
         return
-    
+
     print(f"🧪 Testing {provider.config.name}...")
-    
+
     if stream:
         print("📡 Streaming mode:")
         # Streaming not implemented yet
@@ -35,11 +35,11 @@ async def test_provider(provider_name: str, stream: bool = False):
             "Say 'Hello' in 3 words",
             max_tokens=50,
         )
-        
+
         if result:
             print(f"✅ Response: {result[:200]}")
         else:
-            print(f"❌ Failed")
+            print("❌ Failed")
 
 
 def main():
@@ -68,10 +68,10 @@ Examples:
     parser.add_argument("--web", action="store_true", help="Start web UI")
     parser.add_argument("--port", type=int, default=8080, help="Web UI port")
     args = parser.parse_args()
-    
+
     if args.verbose:
         os.environ["LOG_LEVEL"] = "DEBUG"
-    
+
     if args.list_providers:
         print("\n📋 Supported AI Providers (99+):\n")
         print(f"{'Provider':<20} {'Base URL':<50} {'Model':<30}")
@@ -80,7 +80,7 @@ Examples:
             print(f"{name:<20} {config.base_url[:48]:<50} {config.model:<30}")
         print(f"\n✅ Total: {len(OPENAI_COMPATIBLE_PROVIDERS)} providers")
         return
-    
+
     if args.test:
         async def run_test():
             await test_provider(args.test, args.stream)
@@ -93,13 +93,13 @@ Examples:
         from orchestration.web_ui import start_server
         start_server(args.port)
         return
-    
+
     if args.provider:
         os.environ["DEFAULT_PROVIDER"] = args.provider
 
     project_path = args.project or "./OpenPapyrus"
-    
-    print(f"🚀 Starting AI Pipeline")
+
+    print("🚀 Starting AI Pipeline")
     print(f"   Project: {project_path}")
     print(f"   Output:  {args.output}")
     if args.provider:

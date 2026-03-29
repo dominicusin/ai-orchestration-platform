@@ -1,7 +1,6 @@
 """Templates for task generation"""
 
-from typing import Dict, Any, List
-
+from typing import Any
 
 TASK_TEMPLATE = {
     "id": "",
@@ -38,7 +37,7 @@ EXECUTION_RESULT_TEMPLATE = {
 }
 
 
-def create_task(name: str, handler, capability: str = None) -> Dict[str, Any]:
+def create_task(name: str, handler, capability: str = None) -> dict[str, Any]:
     """Create task from template"""
     task = TASK_TEMPLATE.copy()
     task["id"] = name
@@ -48,7 +47,7 @@ def create_task(name: str, handler, capability: str = None) -> Dict[str, Any]:
     return task
 
 
-def create_dag(name: str) -> Dict[str, Any]:
+def create_dag(name: str) -> dict[str, Any]:
     """Create DAG from template"""
     dag = DAG_TEMPLATE.copy()
     dag["name"] = name

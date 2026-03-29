@@ -1,10 +1,9 @@
 """Data utilities"""
 
-from typing import Any, List, Dict
-import json
+from typing import Any
 
 
-def flatten(data: Any) -> List:
+def flatten(data: Any) -> list:
     """Flatten nested structure"""
     if isinstance(data, list):
         result = []
@@ -14,12 +13,12 @@ def flatten(data: Any) -> List:
     return [data]
 
 
-def chunk(items: List, size: int) -> List[List]:
+def chunk(items: list, size: int) -> list[list]:
     """Split list into chunks"""
     return [items[i:i+size] for i in range(0, len(items), size)]
 
 
-def deep_merge(dict1: Dict, dict2: Dict) -> Dict:
+def deep_merge(dict1: dict, dict2: dict) -> dict:
     """Deep merge two dictionaries"""
     result = dict1.copy()
     for key, value in dict2.items():

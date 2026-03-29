@@ -1,7 +1,6 @@
 """XML utilities"""
 
 import xml.etree.ElementTree as ET
-from typing import Any, Dict
 
 
 def parse_xml(xml_str: str) -> ET.Element:
@@ -9,7 +8,7 @@ def parse_xml(xml_str: str) -> ET.Element:
     return ET.fromstring(xml_str)
 
 
-def xml_to_dict(element: ET.Element) -> Dict:
+def xml_to_dict(element: ET.Element) -> dict:
     """Convert XML to dict"""
     result = {}
     for child in element:
@@ -17,7 +16,7 @@ def xml_to_dict(element: ET.Element) -> Dict:
     return result
 
 
-def dict_to_xml(data: Dict, root_tag: str = "root") -> str:
+def dict_to_xml(data: dict, root_tag: str = "root") -> str:
     """Convert dict to XML"""
     root = ET.Element(root_tag)
     for key, value in data.items():

@@ -1,7 +1,6 @@
 """Dataclasses utilities"""
 
 import dataclasses
-from typing import Any, Dict
 
 
 def make_dataclass(name: str, fields: list):
@@ -9,7 +8,7 @@ def make_dataclass(name: str, fields: list):
     return dataclasses.make_dataclass(name, fields)
 
 
-def as_dict(obj) -> Dict:
+def as_dict(obj) -> dict:
     """Convert dataclass to dict"""
     if dataclasses.is_dataclass(obj):
         return dataclasses.asdict(obj)

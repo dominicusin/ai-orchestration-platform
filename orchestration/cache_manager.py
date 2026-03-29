@@ -1,9 +1,9 @@
 """Cache utilities"""
 
-import time
 import logging
-from typing import Any, Optional, Dict
+import time
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger("orchestration.cache_manager")
 
@@ -16,33 +16,33 @@ class CacheEntry:
 
 class CacheManager:
     """In-memory cache with TTL"""
-    
+
     def __init__(self):
-        self.cache: Dict[str, CacheEntry] = {}
-    
-    def get(self, key: str) -> Optional[Any]:
+        self.cache: dict[str, CacheEntry] = {}
+
+    def get(self, key: str) -> Any | None:
         if key in self.cache:
             entry = self.cache[key]
             if entry.expires_at > time.time():
                 return entry.value
             del self.cache[key]
         return None
-    
+
     def set(self, key: str, value: Any, ttl: int = 300):
         self.cache[key] = CacheEntry(
             value=value,
             expires_at=time.time() + ttl,
         )
-    
+
     def delete(self, key: str):
         if key in self.cache:
             del self.cache[key]
-    
+
     def clear(self):
         self.cache.clear()
 
 
-_cache: Optional[CacheManager] = None
+_cache: CacheManager | None = None
 
 
 def get_cache() -> CacheManager:

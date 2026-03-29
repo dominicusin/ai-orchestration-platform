@@ -1,7 +1,7 @@
 """JSON utilities"""
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 
 def to_json(data: Any, pretty: bool = False) -> str:
@@ -27,7 +27,7 @@ def from_file(path: str) -> Any:
         return json.load(f)
 
 
-def merge(base: Dict, update: Dict) -> Dict:
+def merge(base: dict, update: dict) -> dict:
     """Deep merge JSON objects"""
     result = base.copy()
     for key, value in update.items():

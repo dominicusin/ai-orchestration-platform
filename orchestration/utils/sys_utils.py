@@ -1,8 +1,7 @@
 """Sys utilities"""
 
-import sys
 import os
-from typing import List
+import sys
 
 
 def get_version() -> str:
@@ -20,12 +19,12 @@ def get_executable() -> str:
     return sys.executable
 
 
-def get_args() -> List[str]:
+def get_args() -> list[str]:
     """Get command line args"""
     return sys.argv
 
 
-def get_env_paths() -> List[str]:
+def get_env_paths() -> list[str]:
     """Get PATH environment variable"""
     return os.environ.get('PATH', '').split(os.pathsep)
 

@@ -1,9 +1,9 @@
 """Class utilities"""
 
-from typing import Any, Dict
+from typing import Any
 
 
-def get_attrs(obj: object) -> Dict[str, Any]:
+def get_attrs(obj: object) -> dict[str, Any]:
     """Get object attributes"""
     return {k: getattr(obj, k) for k in dir(obj) if not k.startswith('_')}
 

@@ -1,7 +1,7 @@
 """Regex utilities"""
 
 import re
-from typing import List, Match
+from re import Match
 
 
 def regex_match(pattern: str, text: str) -> bool:
@@ -14,7 +14,7 @@ def regex_search(pattern: str, text: str) -> Match:
     return re.search(pattern, text)
 
 
-def regex_findall(pattern: str, text: str) -> List[str]:
+def regex_findall(pattern: str, text: str) -> list[str]:
     """Find all matches"""
     return re.findall(pattern, text)
 
@@ -24,7 +24,7 @@ def regex_sub(pattern: str, repl: str, text: str) -> str:
     return re.sub(pattern, repl, text)
 
 
-def regex_split(pattern: str, text: str) -> List[str]:
+def regex_split(pattern: str, text: str) -> list[str]:
     """Split by pattern"""
     return re.split(pattern, text)
 

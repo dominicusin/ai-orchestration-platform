@@ -1,6 +1,5 @@
 """Itertools tools29 utilities"""
 
-import itertools
 
 
 def sum_2(iterable, start=0):

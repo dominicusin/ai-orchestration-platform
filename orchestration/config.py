@@ -1,9 +1,8 @@
 """Configuration management"""
 
-import os
 import json
 import logging
-from typing import Dict, Any, Optional
+import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("orchestration.config")
@@ -17,8 +16,8 @@ class DAGConfig:
     chunk_size: int = 100
     timeout: int = 300
     retry_attempts: int = 3
-    
-    def to_dict(self) -> Dict:
+
+    def to_dict(self) -> dict:
         return {
             "max_workers": self.max_workers,
             "max_depth": self.max_depth,
@@ -28,7 +27,7 @@ class DAGConfig:
         }
 
 
-@dataclass 
+@dataclass
 class AgentConfig:
     """Agent config"""
     id: str
@@ -39,38 +38,38 @@ class AgentConfig:
 
 class ConfigManager:
     """Manage configuration"""
-    
+
     def __init__(self):
         self.config = DAGConfig()
         self.agents = []
-    
+
     def load_from_env(self):
         """Load from environment"""
         self.config.max_workers = int(os.getenv("DAG_MAX_WORKERS", "4"))
         self.config.max_depth = int(os.getenv("DAG_MAX_DEPTH", "10"))
         self.config.chunk_size = int(os.getenv("DAG_CHUNK_SIZE", "100"))
         self.config.timeout = int(os.getenv("DAG_TIMEOUT", "300"))
-    
+
     def load_from_file(self, path: str):
         """Load from JSON file"""
         with open(path) as f:
             data = json.load(f)
-        
+
         if "dag" in data:
             for key, value in data["dag"].items():
                 if hasattr(self.config, key):
                     setattr(self.config, key, value)
-    
+
     def get(self) -> DAGConfig:
         return self.config
-    
+
     def set(self, **kwargs):
         for key, value in kwargs.items():
             if hasattr(self.config, key):
                 setattr(self.config, key, value)
 
 
-_config_manager: Optional[ConfigManager] = None
+_config_manager: ConfigManager | None = None
 
 
 def get_config_manager() -> ConfigManager:

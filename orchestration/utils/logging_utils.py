@@ -21,10 +21,10 @@ def get_logger(name: str) -> logging.Logger:
 
 class StructuredLogger:
     """Structured logging"""
-    
+
     def __init__(self, name: str):
         self.logger = logging.getLogger(name)
-    
+
     def log(self, level: str, message: str, **kwargs):
         msg = f"{message} | {kwargs}" if kwargs else message
         getattr(self.logger, level.lower())(msg)

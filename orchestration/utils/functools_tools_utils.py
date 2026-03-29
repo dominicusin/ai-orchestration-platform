@@ -1,7 +1,7 @@
 """Functools tools utilities"""
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 
 @functools.lru_cache(maxsize=128)
