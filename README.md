@@ -131,3 +131,7 @@ export ENABLE_RLM=true
 ## 📄 License
 
 MIT License
+
+---
+
+🔄 **Mirrors:** [![GitLab](https://img.shields.io/badge/GitLab-dominicusin-orange?logo=gitlab)](https://gitlab.com/dominicusin/ai-orchestration-platform) · GitHub is canonical.
