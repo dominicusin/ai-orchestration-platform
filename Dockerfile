@@ -6,6 +6,7 @@ LABEL description="C++ to Haskell/QML/Reports converter"
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    zstd \
     git \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -24,7 +25,7 @@ RUN python -m venv .venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir .
 
 # Expose ports
 EXPOSE 8080 11434

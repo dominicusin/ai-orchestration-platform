@@ -65,7 +65,7 @@ class TableFormatter(Formatter):
             if isinstance(row, dict):
                 row_str = " | ".join(str(row.get(c, "")).ljust(col_widths[c]) for c in self.columns)
             else:
-                row_str = " | ".join(str(v).ljust(col_widths[c]) for c, v in zip(self.columns, row))
+                row_str = " | ".join(str(v).ljust(col_widths[c]) for c, v in zip(self.columns, row, strict=False))
             rows.append(row_str)
 
         return "\n".join([header, separator] + rows)
