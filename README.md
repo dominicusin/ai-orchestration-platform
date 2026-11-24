@@ -1,7 +1,7 @@
 # AI Pipeline - C++ to Haskell/QML/Reports Converter
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
-![Tests](https://img.shields.io/badge/tests-13%20%F0%9F%8C%85-success)
+![Tests](https://img.shields.io/badge/tests-942%20collected-success)
 ![Providers](https://img.shields.io/badge/providers-99%2B-orange)
 
 Многофазный AI-конвейер для конвертации C++ кода в Haskell, QML и отчёты.
@@ -10,8 +10,8 @@
 
 ```bash
 # Клонировать репозиторий
-git clone <repo-url>
-cd test2
+git clone https://github.com/dominicusin/ai-orchestration-platform.git
+cd ai-orchestration-platform
 
 # Установить зависимости
 pip install -r requirements.txt
