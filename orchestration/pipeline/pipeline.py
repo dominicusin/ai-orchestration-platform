@@ -874,7 +874,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project-path", default="/home/domini/src/petr/test2/OpenPapyrus")
+    parser.add_argument("--project-path", default="./OpenPapyrus")
     parser.add_argument("--output-path", default="./Surypus2")
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--force", action="store_true")

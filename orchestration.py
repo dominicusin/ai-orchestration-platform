@@ -1507,7 +1507,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--project-path", default="/home/domini/src/petr/test2/OpenPapyrus"
+        "--project-path", default="./OpenPapyrus"
     )
     parser.add_argument("--output-path", default="./Surypus2")
     parser.add_argument("--workers", type=int, default=None, help="Max parallel workers")
